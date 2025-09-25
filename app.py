@@ -14,6 +14,10 @@ from openpyxl import Workbook
 from openpyxl.worksheet.table import Table, TableStyleInfo
 from openpyxl.styles import PatternFill
 
+from insertarMedicionV2 import insertar_medicion_bp as insertar_medicion_v2_bp
+from flask_socketio import SocketIO, emit
+
+
 
 
 load_dotenv()
@@ -112,7 +116,13 @@ config = {
 }
 print(config)
 
- 
+socketio = SocketIO(app, cors_allowed_origins="*")
+
+@socketio.on('connect')
+def handle_connect():
+    print('Cliente conectado')
+    emit('message', {'data': 'Conexión exitosa'})
+
 @app.route('/endovenosaDummy', methods=['GET'])
 def endovenosa_dummy():
     """
@@ -604,6 +614,8 @@ def insertar_medicion():
         if conn.is_connected():
             cursor.close()
             conn.close()
+
+app.register_blueprint(insertar_medicion_v2_bp)
 
 @app.route('/listarTablas', methods=['GET'])
 def listar_tablas():
@@ -1292,11 +1304,19 @@ def listar_datos_estructurados_v2():
         id_proyecto = args.get("disp.id_proyecto")
         if id_proyecto is not None:
             result_func = f_numero_variables_por_proyecto(id_proyecto)
-            num_dispositivos = result_func["num_dispositivos"]
-            num_variables_proyecto = result_func["num_variables_proyecto"]
-            num_variables_dispositivo = int(result_func["num_variables_dispositivo"])
-            limit_adaptado = (limit * num_variables_dispositivo) if (limit is not None and limit > 0) else 0
-            offset_adaptado = offset * num_variables_dispositivo if offset > 0 else 0
+            if result_func is not None and isinstance(result_func, dict):
+                num_dispositivos = result_func.get("num_dispositivos", 0)
+                num_variables_proyecto = result_func.get("num_variables_proyecto", 0)
+                num_variables_dispositivo = int(result_func.get("num_variables_dispositivo", 0))
+                limit_adaptado = (limit * num_variables_dispositivo) if (limit is not None and limit > 0 and num_variables_dispositivo > 0) else 0
+                offset_adaptado = offset * num_variables_dispositivo if offset > 0 and num_variables_dispositivo > 0 else 0
+            else:
+                print("Error: result_func es None o no es un diccionario")
+                num_dispositivos = None
+                num_variables_proyecto = None
+                num_variables_dispositivo = None
+                limit_adaptado = limit if limit is not None else 0
+                offset_adaptado = 0
         else:
             print(offset)
             print("DEBUGUEANDOO", id_proyecto)
@@ -1396,9 +1416,16 @@ def listar_datos_estructurados_v2():
 
         # total_count = len(filas)
         # Calcular total_count antes de aplicar limit y offset (independendiente del limit)
-        total_count = f_numero_mediciones_por_dispositivo(codigo_interno=args.get("disp.codigo_interno"),fecha_inicio=fecha_inicio, fecha_fin=fecha_fin)
-        #TODO: Que pasa si hay mas sensores en un dispositivo?
-        total_count = total_count / num_variables_dispositivo
+        try:
+            total_count = f_numero_mediciones_por_dispositivo(codigo_interno=args.get("disp.codigo_interno"),fecha_inicio=fecha_inicio, fecha_fin=fecha_fin)
+            #TODO: Que pasa si hay mas sensores en un dispositivo?
+            if num_variables_dispositivo and num_variables_dispositivo > 0:
+                total_count = int(total_count / num_variables_dispositivo)
+            else:
+                total_count = len(df_pivoted)
+        except Exception as e:
+            print(f"Error calculando total_count: {e}")
+            total_count = len(df_pivoted)
 
         # Aplicar limit y offset al DataFrame pivotado
         # if limit > 0:
@@ -2686,7 +2713,12 @@ def f_numero_variables_por_proyecto(id_proyecto):
 
         if len(filas) == 0:
             mensaje_error = f"No hay registros para los filtros solicitados"
-            return jsonify({'status': 'fail', 'error': mensaje_error})
+            print(mensaje_error)
+            return {
+                "num_dispositivos": 0,
+                'num_variables_proyecto': 0,
+                "num_variables_dispositivo": 0, 
+            }
 
         # Crear el JSON con los datos
         resultado = []
@@ -2716,9 +2748,20 @@ def f_numero_variables_por_proyecto(id_proyecto):
         return result
 
     except Exception as e:
-        print(e)
-        return None
+        print(f"Error en f_numero_variables_por_proyecto: {e}")
+        return {
+            "num_dispositivos": 0,
+            'num_variables_proyecto': 0,
+            "num_variables_dispositivo": 0, 
+        }
+
+    finally:
+        if 'conn' in locals() and conn.is_connected():
+            cursor.close()
+            conn.close()
 
 
 if __name__ == "__main__":
-    app.run(host='0.0.0.0', port=8084)
+    # app.run(host='0.0.0.0', port=8084)
+    socketio.run(app, port=8084)
+
