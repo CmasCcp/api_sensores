@@ -277,7 +277,7 @@ def insertar_medicion_v2():
 
         conn.commit()
 
-        data_websocket = {"dispositivoId": dispositivo_id[0], "fecha": formatted_datetime, "sesionesIds": sesiones_ids, "sensorIds": sensor_ids, "variableIds": variable_ids, "valores": values}
+        # data_websocket = {"dispositivoId": dispositivo_id[0], "fecha": formatted_datetime, "sesionesIds": sesiones_ids, "sensorIds": sensor_ids, "variableIds": variable_ids, "valores": values}
         # data_websocket = []
         # for i, measurement in enumerate(measurements):
         #     m = measurement.copy()
@@ -286,8 +286,8 @@ def insertar_medicion_v2():
         
         
         # Emitir mensaje por SocketIO después del commit exitoso
-        socketio = current_app.extensions['socketio']
-        socketio.emit('medicion_insertada', data_websocket)
+        # socketio = current_app.extensions['socketio']
+        # socketio.emit('medicion_insertada', data_websocket)
         # return jsonify({'status': 'success', 'message': 'Registro insertado correctamente'}), 201, {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'}
         return jsonify({'status': 'success', 'message': 'Registro insertado correctamente', "data": measurements}), 201, {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'}
 

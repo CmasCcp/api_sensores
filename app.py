@@ -22,6 +22,7 @@ from flask_socketio import SocketIO, emit
 
 load_dotenv()
 app = Flask(__name__)
+app.config['SECRET_KEY'] = 'your-secret-key-here'  # Reemplaza con una clave secreta segura
 app.config['SWAGGER'] = {
     'title': 'API Docs - Sensores',
     'description': 'Esta es la documentación interactiva para la API. Incluye detalles sobre los endpoints disponibles, sus parámetros, y ejemplos de uso.',
@@ -116,12 +117,48 @@ config = {
 }
 print(config)
 
-socketio = SocketIO(app, cors_allowed_origins="*")
+# socketio = SocketIO(app, cors_allowed_origins="*", logger=True, engineio_logger=True)
 
-@socketio.on('connect')
-def handle_connect():
-    print('Cliente conectado')
-    emit('message', {'data': 'Conexión exitosa'})
+# @socketio.on('connect')
+# def handle_connect():
+#     print('Cliente conectado')
+#     emit('message', {'data': 'Conexión exitosa'})
+
+# @socketio.on('disconnect')
+# def handle_disconnect():
+#     print('Cliente desconectado')
+
+# @socketio.on_error_default
+# def default_error_handler(e):
+#     print(f'SocketIO Error: {e}')
+
+# @app.route('/test-websocket', methods=['GET'])
+# def test_websocket():
+#     """
+#     Endpoint de prueba para verificar que WebSocket funciona correctamente.
+#     ---
+#     tags:
+#       - Testing
+#     responses:
+#       200:
+#         description: Mensaje de prueba enviado por WebSocket
+#     """
+#     try:
+#         test_data = {
+#             'message': 'Test message from server',
+#             'timestamp': datetime.now().isoformat()
+#         }
+#         socketio.emit('test_message', test_data)
+#         return jsonify({
+#             'status': 'success', 
+#             'message': 'Test WebSocket message sent',
+#             'data': test_data
+#         }), 200
+#     except Exception as e:
+#         return jsonify({
+#             'status': 'error',
+#             'message': f'WebSocket test failed: {str(e)}'
+#         }), 500
 
 @app.route('/endovenosaDummy', methods=['GET'])
 def endovenosa_dummy():
@@ -597,6 +634,21 @@ def insertar_medicion():
             cursor.execute(sql_query, valores)
 
         conn.commit()
+        # data_websocket = {"dispositivoId": "Desconocido", "fecha": formatted_datetime, "sesionesIds": sesiones_ids, "sensorIds": sensor_ids, "variableIds": variable_ids, "valores": values}
+        # data_websocket = []
+        # for i, measurement in enumerate(measurements):
+        #     m = measurement.copy()
+        #     m["dispositivoId"] = dispositivo_id[i] if i < len(dispositivo_id) else dispositivo_id[0]
+        #     data_websocket.append(m)
+        
+        
+        # Emitir mensaje por SocketIO después del commit exitoso
+        # try:
+        #     socketio.emit('medicion_insertada', data_websocket)
+        #     print("WebSocket message emitted successfully")
+        # except Exception as ws_error:
+        #     print(f"Error emitting WebSocket message: {ws_error}")
+        #     # No fallar la operación si WebSocket falla
 
         return jsonify({'status': 'success', 'message': 'Registro insertado correctamente'}), 201, {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'}
 
@@ -2762,6 +2814,6 @@ def f_numero_variables_por_proyecto(id_proyecto):
 
 
 if __name__ == "__main__":
-    # app.run(host='0.0.0.0', port=8084)
-    socketio.run(app, port=8084)
+    app.run(host='0.0.0.0', port=8084)
+    # socketio.run(app, host='0.0.0.0', port=8084, debug=True)
 
