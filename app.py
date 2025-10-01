@@ -116,12 +116,12 @@ config = {
 }
 print(config)
 
-socketio = SocketIO(app, cors_allowed_origins="*")
+# socketio = SocketIO(app, cors_allowed_origins="*")
 
-@socketio.on('connect')
-def handle_connect():
-    print('Cliente conectado')
-    emit('message', {'data': 'Conexión exitosa'})
+# @socketio.on('connect')
+# def handle_connect():
+#     print('Cliente conectado')
+#     emit('message', {'data': 'Conexión exitosa'})
 
 @app.route('/endovenosaDummy', methods=['GET'])
 def endovenosa_dummy():
@@ -2762,6 +2762,6 @@ def f_numero_variables_por_proyecto(id_proyecto):
 
 
 if __name__ == "__main__":
-    # app.run(host='0.0.0.0', port=8084)
-    socketio.run(app, port=8084)
+    app.run(host='0.0.0.0', port=8084)
+    # socketio.run(app, port=8084)
 

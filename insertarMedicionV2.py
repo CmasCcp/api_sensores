@@ -188,20 +188,36 @@ def generar_link_v2():
 @insertar_medicion_bp.route('/insertarMedicionV2', methods=['GET'])
 def insertar_medicion_v2():
     conn = None
-    dispositivo_id = request.args.get('idDispositivo', '').split(',')
+
+    dispositivo_id_raw = request.args.get('idDispositivo', '')
+    codigo_interno = request.args.get('codigoInterno', '')
     sensorTipo_ids = request.args.get('idsSensorTipo', '').split(',')
 
-
+    # Si no hay idDispositivo, buscarlo por codigoInterno
+    if not dispositivo_id_raw:
+        dispositivo_id = []
+        if codigo_interno:
+            try:
+                conn = mysql.connector.connect(**config)
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT id_dispositivo FROM dispositivos WHERE codigo_interno = %s",
+                    (codigo_interno,)
+                )
+                results = cursor.fetchall()
+                dispositivo_id = [str(row[0]) for row in results]
+            finally:
+                if conn and conn.is_connected():
+                    cursor.close()
+                    conn.close()
+    else:
+        dispositivo_id = dispositivo_id_raw.split(',')
 
     timestamps = request.args.get('times', '').split(',')
     sesiones_ids = request.args.get('idsSesiones', '').split(',')
-    
     variable_ids = request.args.get('idsVariables', '').split(',')
-    
     values = request.args.get('valores', '').split(',')
 
-    # TODO: LOGICA PARA DETERMINARLO
-    # sensor_ids = request.args.get('idsSensores', '').split(',')
     # Determinar sensor_ids a partir de dispositivo_id y sensorTipo_ids
     sensor_ids = []
     try:
@@ -277,7 +293,7 @@ def insertar_medicion_v2():
 
         conn.commit()
 
-        data_websocket = {"dispositivoId": dispositivo_id[0], "fecha": formatted_datetime, "sesionesIds": sesiones_ids, "sensorIds": sensor_ids, "variableIds": variable_ids, "valores": values}
+        # data_websocket = {"dispositivoId": dispositivo_id[0], "fecha": formatted_datetime, "sesionesIds": sesiones_ids, "sensorIds": sensor_ids, "variableIds": variable_ids, "valores": values}
         # data_websocket = []
         # for i, measurement in enumerate(measurements):
         #     m = measurement.copy()
@@ -286,8 +302,8 @@ def insertar_medicion_v2():
         
         
         # Emitir mensaje por SocketIO después del commit exitoso
-        socketio = current_app.extensions['socketio']
-        socketio.emit('medicion_insertada', data_websocket)
+        # socketio = current_app.extensions['socketio']
+        # socketio.emit('medicion_insertada', data_websocket)
         # return jsonify({'status': 'success', 'message': 'Registro insertado correctamente'}), 201, {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'}
         return jsonify({'status': 'success', 'message': 'Registro insertado correctamente', "data": measurements}), 201, {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'}
 
