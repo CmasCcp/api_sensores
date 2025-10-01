@@ -25,20 +25,20 @@ def generar_link():
     codigo_interno = request.args.get('codigo_interno')  # Nuevo parámetro
 
     # Si no hay id_dispositivo, buscarlo por codigo_interno
-    if not id_dispositivos_raw and codigo_interno:
-        try:
-            conn = mysql.connector.connect(**config)
-            cursor = conn.cursor()
-            cursor.execute(
-                "SELECT id_dispositivo FROM dispositivos WHERE codigo_interno = %s",
-                (codigo_interno,)
-            )
-            results = cursor.fetchall()
-            id_dispositivos_raw = ','.join([str(row[0]) for row in results])
-        finally:
-            if conn.is_connected():
-                cursor.close()
-                conn.close()
+    # if not id_dispositivos_raw and codigo_interno:
+        # try:
+        #     conn = mysql.connector.connect(**config)
+        #     cursor = conn.cursor()
+        #     cursor.execute(
+        #         "SELECT id_dispositivo FROM dispositivos WHERE codigo_interno = %s",
+        #         (codigo_interno,)
+        #     )
+        #     results = cursor.fetchall()
+        #     id_dispositivos_raw = ','.join([str(row[0]) for row in results])
+        # finally:
+        #     if conn.is_connected():
+        #         cursor.close()
+        #         conn.close()
 
     try:
         conn = mysql.connector.connect(**config)
