@@ -20,7 +20,25 @@ insertar_medicion_bp = Blueprint('insertar_medicion', __name__)
 @insertar_medicion_bp.route('/generarLink', methods=['GET'])
 def generar_link():
     # Lógica para generar el link
+
     id_dispositivos_raw = request.args.get('id_dispositivo')  # Puede ser '1,2,3' o None
+    codigo_interno = request.args.get('codigo_interno')  # Nuevo parámetro
+
+    # Si no hay id_dispositivo, buscarlo por codigo_interno
+    if not id_dispositivos_raw and codigo_interno:
+        try:
+            conn = mysql.connector.connect(**config)
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT id_dispositivo FROM dispositivos WHERE codigo_interno = %s",
+                (codigo_interno,)
+            )
+            results = cursor.fetchall()
+            id_dispositivos_raw = ','.join([str(row[0]) for row in results])
+        finally:
+            if conn.is_connected():
+                cursor.close()
+                conn.close()
 
     try:
         conn = mysql.connector.connect(**config)
@@ -78,8 +96,12 @@ def generar_link():
         variables_str = ",".join(variables)
         valores = [str(item["Descripcion"] + " [" + item["Unidad"] + "]") for item in respuesta if item["Descripcion"] is not None]
         valores_str = ",".join(valores)
-        link_v2 = f"https://api-sensores.cmasccp.cl/insertarMedicionV2?idDispositivo={id_dispositivos_raw}&idsSensorTipo={sensor_tipos_str}&idsVariables={variables_str}&valores={valores_str}"
+        
 
+        if id_dispositivos_raw:
+            link_v2 = f"https://api-sensores.cmasccp.cl/insertarMedicionV2?idDispositivo={id_dispositivos_raw}&idsSensorTipo={sensor_tipos_str}&idsVariables={variables_str}&valores={valores_str}"
+        elif codigo_interno:
+            link_v2 = f"https://api-sensores.cmasccp.cl/insertarMedicionV2?codigoInterno={codigo_interno}&idsSensorTipo={sensor_tipos_str}&idsVariables={variables_str}&valores={valores_str}"
 
         sensores = [str(item["Id Sensor"]) for item in respuesta if item["Id Sensor"] is not None]
         sensores_str = ",".join(sensores)
