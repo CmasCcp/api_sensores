@@ -2,7 +2,6 @@ __pycache__/
 venv/
 core.*
 *.zip
-ecosystem.config.js
 observer_images.py
 wrapper_cmpc.sql
 uploads/
