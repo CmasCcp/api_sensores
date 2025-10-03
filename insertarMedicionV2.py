@@ -217,16 +217,18 @@ def insertar_medicion_v2():
     # Si no hay idDispositivo, buscarlo por codigoInterno
     if not dispositivo_id_raw:
         dispositivo_id = []
+        proyecto_id = []
         if codigo_interno:
             try:
                 conn = mysql.connector.connect(**config)
                 cursor = conn.cursor()
                 cursor.execute(
-                    "SELECT id_dispositivo FROM dispositivos WHERE codigo_interno = %s",
+                    "SELECT id_dispositivo, id_proyecto FROM dispositivos WHERE codigo_interno = %s",
                     (codigo_interno,)
                 )
                 results = cursor.fetchall()
                 dispositivo_id = [str(row[0]) for row in results]
+                proyecto_id = [str(row[1]) for row in results]
             finally:
                 if conn and conn.is_connected():
                     cursor.close()
@@ -314,19 +316,27 @@ def insertar_medicion_v2():
 
         conn.commit()
 
-        # data_websocket = {"dispositivoId": dispositivo_id[0], "fecha": formatted_datetime, "sesionesIds": sesiones_ids, "sensorIds": sensor_ids, "variableIds": variable_ids, "valores": values}
-        # data_websocket = []
-        # for i, measurement in enumerate(measurements):
-        #     m = measurement.copy()
-        #     m["dispositivoId"] = dispositivo_id[i] if i < len(dispositivo_id) else dispositivo_id[0]
-        #     data_websocket.append(m)
+        # Listar Datos Estructurados
+        arguments = {
+            "tabla": "datos",
+            "disp.id_proyecto": proyecto_id[0],
+            "disp.codigo_interno": codigo_interno,
+            "limite": 1,
+            "offset": 0
+        }
+
+        from listarDatosEstructuradosV2 import listar_datos_estructurados_v2
+        res = listar_datos_estructurados_v2(arguments)
+        print("Respuesta de listar_datos_estructurados_v2:", res, arguments)
+
+        data_websocket = res
         
         
         # Emitir mensaje por SocketIO después del commit exitoso
-        # socketio = current_app.extensions['socketio']
-        # socketio.emit('medicion_insertada', data_websocket)
+        socketio = current_app.extensions['socketio']
+        socketio.emit('medicion_insertada', data_websocket)
         # return jsonify({'status': 'success', 'message': 'Registro insertado correctamente'}), 201, {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'}
-        return jsonify({'status': 'success', 'message': 'Registro insertado correctamente', "data": measurements}), 201, {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'}
+        return jsonify({'status': 'success', 'message': 'Registro insertado correctamente', "data": res}), 201, {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'}
 
     except mysql.connector.Error as e:
         mensaje_error = f"Error al conectarse a la base de datos {e}"

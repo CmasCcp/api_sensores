@@ -1,0 +1,31 @@
+{
+  "status": "success",
+  "data": {
+    "tableData": [
+      {
+        "fecha": "2025-06-23 21:33:25",
+        "id_sesion": "",
+        "sesion_descripcion": "",
+        "fecha_inicio": "",
+        "ubicacion": "",
+        "id_proyecto": 1,
+        "codigo_interno": "EMMA-01",
+        "dispositivo_descripcion": "Medición río Biobío en Laja",
+        "DS18B20 [Grados celcius (°C)]": [
+          4.5
+        ],
+        "Divisor de Voltaje [Voltaje (V)]": [
+          9.6912003
+        ],
+        "ENV-20-EC-K1.0 [Electroconductividad ambiental (µS/cm)]": [
+          55.0820007
+        ],
+        "ENV-20-pH [pH ambiental (pH)]": [
+          13.2209997
+        ]
+      }
+    ],
+    "tabla": "datos",
+    "totalCount": 1
+  }
+}
