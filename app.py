@@ -15,7 +15,7 @@ from openpyxl.worksheet.table import Table, TableStyleInfo
 from openpyxl.styles import PatternFill
 
 from insertarMedicionV2 import insertar_medicion_bp as insertar_medicion_v2_bp
-from flask_socketio import SocketIO, emit
+# from flask_socketio import SocketIO, emit
 
 
 
@@ -920,286 +920,6 @@ def numero_variables_por_proyecto():
     print(e)
     return None
 
-
-
-# @app.route('/listarDatosEstructurados', methods=['GET'])
-# def listar_datos_estructurados():
-#     """
-#     Lista los datos estructurados de la tabla "datos" con filtros opcionales.
-#     ---
-#     tags:
-#       - Tablas
-#     parameters:
-#       - name: limite
-#         in: query
-#         type: integer
-#         required: false
-#         description: Número máximo de registros a retornar. Sin límite si no se especifica.
-#       - name: offset
-#         in: query
-#         type: integer
-#         required: false
-#         description: Desplazamiento inicial para la consulta. Predeterminado a 0.
-#       - name: formato
-#         in: query
-#         type: string
-#         required: false
-#         description: Formato de salida 'json' o 'csv'. Predeterminado a 'json'.
-#       - name: fecha_inicio
-#         in: query
-#         type: string
-#         format: date
-#         required: false
-#         description: Fecha de inicio para filtrar los datos en formato "YYYY-MM-DD".
-#       - name: fecha_fin
-#         in: query
-#         type: string
-#         format: date
-#         required: false
-#         description: Fecha de fin para filtrar los datos en formato "YYYY-MM-DD".
-#       - name: filtros
-#         in: query
-#         type: string
-#         required: false
-#         description: Filtros opcionales para columnas específicas en la forma 'columna=valor1,valor2'.
-#     responses:
-#       200:
-#         description: Datos estructurados obtenidos con éxito.
-#         schema:
-#           type: object
-#           properties:
-#             status:
-#               type: string
-#               example: success
-#             data:
-#               type: object
-#               properties:
-#                 tableData:
-#                   type: array
-#                   items:
-#                     type: object
-#                     example: { "fecha": "2024-01-01", "id_sesion": 123, "valor": 45.6, "unidad_medida": "Temperatura (°C)" }
-#                 tabla:
-#                   type: string
-#                   example: datos
-#                 totalCount:
-#                   type: integer
-#                   example: 100
-#       400:
-#         description: No se encontraron registros para los filtros solicitados o error en el formato.
-#         schema:
-#           type: object
-#           properties:
-#             status:
-#               type: string
-#               example: fail
-#             error:
-#               type: string
-#               example: No hay registros para los filtros solicitados
-#       403:
-#         description: La tabla solicitada no está permitida.
-#         schema:
-#           type: object
-#           properties:
-#             status:
-#               type: string
-#               example: fail
-#             error:
-#               type: string
-#               example: Tabla no permitida
-#       500:
-#         description: Error interno en la base de datos o error inesperado.
-#         schema:
-#           type: object
-#           properties:
-#             status:
-#               type: string
-#               example: fail
-#             error:
-#               type: string
-#               example: Error al conectarse a la base de datos <detalle del error>
-#     """
-
-#     args = request.args
-#     tabla = "datos"  # args.get('tabla')  # Nombre de la tabla como parámetro
-#     limit = int(args.get('limite', 0))
-#     offset = int(args.get('offset', 0))
-#     formato = args.get('formato', 'json')
-
-#     fecha_inicio = args.get('fecha_inicio')
-#     fecha_fin = args.get('fecha_fin')
-
-#     args_dict = request.args.to_dict()
-#     not_primary_keys = ['tabla', 'limite', 'offset', 'formato', 'fecha_inicio', 'fecha_fin']
-
-#     # Filtrar los argumentos relevantes
-#     filtered_args = {key: value.split(',') for key, value in args_dict.items() if key not in not_primary_keys}
-
-#     where_clauses = []
-#     params = []
-
-#     # Rango de fechas
-#     if fecha_inicio:
-#         where_clauses.append("(d.fecha >= %s)")
-#         params.append(fecha_inicio)
-    
-#     if fecha_fin:
-#         where_clauses.append("(d.fecha <= %s)")
-#         params.append(fecha_fin)
-
-#     for key, values in filtered_args.items():
-#         or_conditions = " OR ".join([f"{key}=%s" for _ in values])
-#         where_clauses.append(f"({or_conditions})")
-#         params.extend(values)
-
-#     where_clause = ' AND '.join(where_clauses)
-#     where_clause = f"WHERE {where_clause}" if where_clause else ""
-
-#     if tabla not in ALLOWED_TABLES:
-#         return jsonify({'status': 'fail', 'error': 'Tabla no permitida'}), 403
-
-#     try:
-#         conn = mysql.connector.connect(**config)
-#         cursor = conn.cursor()
-
-#         sql_query = f"""
-#             SELECT
-#                 d.id_dato,
-#                 d.fecha,
-#                 d.id_sesion,
-#                 d.valor,
-#                 CONCAT(st.modelo, ' [', v.descripcion, ' (', v.unidad, ')]') AS unidad_medida,
-#                 s.descripcion AS sesion_descripcion,
-#                 s.fecha_inicio,
-#                 s.ubicacion,
-#                 disp.id_proyecto,
-#                 disp.codigo_interno,
-#                 disp.descripcion AS dispositivo_descripcion
-#             FROM
-#                 sensores_dev.datos AS d
-#             LEFT JOIN
-#                 sensores_dev.variables AS v ON d.id_variable = v.id_variable
-#             LEFT JOIN
-#                 sensores_dev.sesiones AS s ON d.id_sesion = s.id_sesion
-#             LEFT JOIN
-#                 sensores_dev.sensores AS sens ON d.id_sensor = sens.id_sensor
-#             LEFT JOIN
-#                 sensores_dev.sensores_tipo AS st ON sens.id_sensor_tipo = st.id_sensor_tipo
-#             LEFT JOIN
-#                 sensores_dev.sensores_en_dispositivo AS sed ON sens.id_sensor = sed.id_sensor
-#             LEFT JOIN
-#                 sensores_dev.dispositivos AS disp ON sed.id_dispositivo = disp.id_dispositivo
-#             {where_clause}
-#             LIMIT %s OFFSET %s
-#         """
-
-#         params.extend([limit, offset])  # Asegúrate de agregar el límite y offset a los parámetros
-
-#         cursor.execute(sql_query, params)
-#         filas = cursor.fetchall()
-#         if len(filas) == 0:
-#             mensaje_error = f"No hay registros para los filtros solicitados"
-#             return jsonify({'status': 'fail', 'error': mensaje_error}), 400
-        
-#         # Convertir resultados en DataFrame
-#         respuesta = []
-#         for fila in filas:
-#           datos_dict = {key: value for key, value in zip(cursor.column_names, fila)}
-#           for key, value in datos_dict.items():
-#             # Convierte id_dato a string explícitamente
-#             if key == "id_dato" and isinstance(value, int):
-#               datos_dict[key] = str(value)
-#             elif isinstance(value, decimal.Decimal):
-#               datos_dict[key] = float(value)
-#             elif isinstance(value, (datetime, date)):
-#               datos_dict[key] = value.isoformat()
-#           respuesta.append(datos_dict)
-
-#         print(respuesta)
-
-#         # Función personalizada para concatenar los id_dato
-#         def concatenate_id_dato(series):
-#             return ', '.join(map(str, series))
-
-#         # Crear el DataFrame
-#         df = pd.DataFrame(respuesta)
-
-#         # Rellenar valores nulos (NaN)
-#         df = df.fillna(value={"id_sesion": "Sin sesión", "sesion_descripcion": "", "fecha_inicio": "", "ubicacion": ""})
-
-#         # Crear la tabla pivotada
-#         df_pivoted = df.pivot_table(
-#             index=["fecha", "id_sesion", "sesion_descripcion", "fecha_inicio", "ubicacion", "id_proyecto", "codigo_interno", "dispositivo_descripcion"],
-#             columns="unidad_medida",
-#             values="valor",
-#             aggfunc=list
-#         ).reset_index()
-
-#         # Ahora agregar la columna de concatenación de id_dato (unión de los valores de 'id_dato' por fila)
-#         df_pivoted["id_dato_concatenado"] = df_pivoted.apply(
-#             lambda row: concatenate_id_dato(df.loc[df["fecha"] == row["fecha"], "id_dato"]),
-#             axis=1
-#         )
-
-#         # Convertir las listas a cadenas separadas por comas
-#         df_pivoted = df_pivoted.applymap(lambda x: ', '.join(map(str, x)) if isinstance(x, list) else str(x) if x is not None else "")
-#         # Convertir las listas a cadenas separadas por comas (sin espacios)
-#         # df_pivoted = df_pivoted.applymap(lambda x: ','.join(map(str, x)) if isinstance(x, list) else str(x) if x is not None else "")
-
-
-#         # Calcular total_count antes de aplicar limit y offset
-#         total_count = len(df_pivoted)
-
-#         # Aplicar limit y offset al DataFrame pivotado
-#         if limit > 0:
-#             df_pivoted = df_pivoted.iloc[offset:offset + limit]
-
-#         # Formato de respuesta
-#         if formato == 'json':
-#             json_response = df_pivoted.to_dict(orient="records")
-#             json_respuesta = json.dumps({
-#                 'status': 'success',
-#                 'data': {
-#                     'tableData': json_response,
-#                     'tabla': tabla,
-#                     'totalCount': total_count
-#                 }
-#             }, ensure_ascii=False)
-#             return json_respuesta, 200, {'Content-Type': 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*'}
-
-#         elif formato == 'csv':
-#             return Response(
-#                 stream_with_context(build_csv(df_pivoted)),
-#                 mimetype="text/csv",
-#                 headers={"Content-Disposition": "attachment;filename=output.csv"}
-#             )
-
-#         elif formato == 'xlsx':
-#             return Response(
-#                 stream_with_context(build_excel(df_pivoted)),
-#                 mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-#                 headers={"Content-Disposition": "attachment;filename=output.xlsx"}
-#             )
-#         else:
-#             mensaje_error = f"Formato '{formato}' no soportado. Use 'json' o 'csv'."
-#             return jsonify({'status': 'fail', 'error': mensaje_error}), 400
-
-
-#     except mysql.connector.Error as e:
-#         mensaje_error = f"Error al conectarse a la base de datos {e}"
-#         print(mensaje_error)
-#         return jsonify({'status': 'fail', 'error': mensaje_error}), 500
-
-#     except Exception as e:
-#         mensaje_error = f"Error desconocido: {e}"
-#         print(mensaje_error)
-#         return jsonify({'status': 'fail', 'error': mensaje_error}), 500
-
-#     finally:
-#         if conn.is_connected():
-#             cursor.close()
-#             conn.close()
-
 @app.route('/listarDatosEstructuradosV2', methods=['GET'])
 def listar_datos_estructurados_v2():
     """
@@ -1370,8 +1090,6 @@ def listar_datos_estructurados_v2():
                 limit_adaptado = limit if limit is not None else 0
                 offset_adaptado = 0
         else:
-            print(offset)
-            print("DEBUGUEANDOO", id_proyecto)
             num_dispositivos = None
             num_variables_proyecto = None
             num_variables_dispositivo = None
@@ -1462,14 +1180,15 @@ def listar_datos_estructurados_v2():
 
         # Convertir las listas a cadenas separadas por comas
         df_pivoted = df_pivoted.applymap(lambda x: ', '.join(map(str, x)) if isinstance(x, list) else str(x) if x is not None else "")
-        # Convertir las listas a cadenas separadas por comas (sin espacios)
-        # df_pivoted = df_pivoted.applymap(lambda x: ','.join(map(str, x)) if isinstance(x, list) else str(x) if x is not None else "")
 
-
-        # total_count = len(filas)
         # Calcular total_count antes de aplicar limit y offset (independendiente del limit)
         try:
-            total_count = f_numero_mediciones_por_dispositivo(codigo_interno=args.get("disp.codigo_interno"),fecha_inicio=fecha_inicio, fecha_fin=fecha_fin)
+            codigo_interno=args.get("disp.codigo_interno")
+            if not codigo_interno:
+                codigos_internos = f_dispositivos_por_proyecto(id_proyecto=id_proyecto)
+                total_count = f_numero_mediciones_por_dispositivo(codigo_interno=codigos_internos,fecha_inicio=fecha_inicio, fecha_fin=fecha_fin)
+            else:
+                total_count = f_numero_mediciones_por_dispositivo(codigo_interno=codigo_interno,fecha_inicio=fecha_inicio, fecha_fin=fecha_fin)
             #TODO: Que pasa si hay mas sensores en un dispositivo?
             if num_variables_dispositivo and num_variables_dispositivo > 0:
                 total_count = int(total_count / num_variables_dispositivo)
@@ -2125,120 +1844,6 @@ def modificar_datos():
             cursor.close()
             conn.close()
 
-# @app.route('/eliminarDatos', methods=['GET'])
-# def eliminar_datos():
-#     """
-#     Elimina registros de una tabla específica en la base de datos.
-#     ---
-#     tags:
-#       - Datos
-#     parameters:
-#       - name: tabla
-#         in: query
-#         type: string
-#         required: true
-#         description: Nombre de la tabla desde donde se eliminarán los registros.
-#       - name: filtros
-#         in: query
-#         type: string
-#         required: true
-#         description: Filtros para identificar los registros a eliminar en la forma 'columna=valor'.
-#     responses:
-#       200:
-#         description: Registro(s) eliminado(s) correctamente.
-#         schema:
-#           type: object
-#           properties:
-#             status:
-#               type: string
-#               example: success
-#             message:
-#               type: string
-#               example: "1 registro(s) eliminado(s) correctamente"
-#       403:
-#         description: Faltan parámetros requeridos o la tabla no está permitida.
-#         schema:
-#           type: object
-#           properties:
-#             status:
-#               type: string
-#               example: fail
-#             error:
-#               type: string
-#               example: "'Se requiere un ID' o 'Tabla no permitida'"
-#       404:
-#         description: Registro no encontrado o no se realizaron cambios.
-#         schema:
-#           type: object
-#           properties:
-#             status:
-#               type: string
-#               example: fail
-#             error:
-#               type: string
-#               example: "Registro no encontrado o sin cambios"
-#       500:
-#         description: Error interno en la base de datos o error inesperado.
-#         schema:
-#           type: object
-#           properties:
-#             status:
-#               type: string
-#               example: fail
-#             error:
-#               type: string
-#               example: "Error al conectarse a la base de datos <detalle del error>"
-#     """
-
-#     args = request.args
-#     tabla = args.get('tabla')  # El nombre de la tabla viene como un parámetro
-
-#     args_dict = request.args.to_dict()
-#     not_primary_keys = ['tabla']
-
-#     filtered_args = {key: value for key, value in args_dict.items() if key not in not_primary_keys}
-#     concatenated_filter = ' AND'.join([f"{key}={value}" for key, value in filtered_args.items()])
-#     if concatenated_filter != '':
-#         concatenated_filter = 'WHERE '+concatenated_filter
-
-#     if concatenated_filter == '':
-#         return jsonify({'status': 'fail', 'error': 'Se requiere un ID'}), 403
-
-#     if tabla not in ALLOWED_TABLES:
-#         return jsonify({'status': 'fail', 'error': 'Tabla no permitida'}), 403
-    
-#     try:
-#         conn = mysql.connector.connect(**config)
-#         cursor = conn.cursor()
-
-#         sql_query = f"DELETE FROM {tabla} {concatenated_filter}"
-#         cursor.execute(sql_query)
-#         conn.commit()
-
-#         if cursor.rowcount == 0:
-#             return jsonify({'status': 'fail', 'error': 'Registro no encontrado o sin cambios'}), 404
-
-#         return jsonify({'status': 'success', 'message': f'{cursor.rowcount} registro(s) actualizado(s) correctamente'}), 200
-
-#     except mysql.connector.Error as e:
-#         mensaje_error = f"Error al conectarse a la base de datos {e}"
-
-#         if(e.errno == 1451):
-#             mensaje_error = f"Error: No es posible eliminar el registro pues existe una referencia a este en otra tabla\n{e}"
-            
-#         print(mensaje_error)        
-#         return jsonify({'status': 'fail', 'error': mensaje_error}), 500
-
-#     except Exception as e:
-#         mensaje_error = f"Error desconocido: {e}"
-#         print(mensaje_error)
-#         return jsonify({'status': 'fail', 'error': mensaje_error}), 500
-
-#     finally:
-#         if conn.is_connected():
-#             cursor.close()
-#             conn.close()
-
 @app.route('/eliminarDatos', methods=['GET'])
 def eliminar_datos():
     """
@@ -2478,37 +2083,6 @@ ALLOWED_EXTENSIONS = {'jpg', 'jpeg', 'png'}
 # Función para verificar las extensiones de archivo permitidas
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
-
-
-# @app.route('/agregarImagen', methods=['POST'])
-# def agregar_imagen():
-#     """
-#     Recibe una imagen y la guarda en el servidor.
-#     """
-
-#     # Verificar si la solicitud contiene un archivo
-#     if 'file' not in request.files:
-#         return jsonify({"error": "No image part"}), 400
-
-#     file = request.files['file']
-
-#     # Si no se seleccionó un archivo, devolver un error
-#     if file.filename == '':
-#         return jsonify({"error": "No selected file"}), 400
-
-#     # Si el archivo tiene una extensión permitida
-#     if file and allowed_file(file.filename):
-#         # Asegurarse de que el nombre del archivo sea seguro
-#         filename = secure_filename(file.filename)
-#         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-
-#         # Guardar el archivo en el directorio
-#         file.save(filepath)
-
-#         return jsonify({"mensaje": "Imagen recibida y guardada con éxito", "filename": filename}), 201
-#     #GUardar url con nombre imagen en base de datos. crear carpetas por dispositivos.
-
-#     return jsonify({"error": "Invalid file format"}), 400
  
 # Endpoint para recibir la imagen
 @app.route('/agregarImagen', methods=['POST'])
@@ -2654,85 +2228,105 @@ def build_excel(df_pivoted):
 
 
 # FUNCIONES
-def f_numero_mediciones_por_dispositivo(codigo_interno, id_dispositivo=None, filtered_args=None, fecha_inicio=None, fecha_fin=None):
+def f_numero_mediciones_por_dispositivo(codigo_interno, fecha_inicio=None, fecha_fin=None):
+  """Devuelve el número total de mediciones aplicando los filtros.
+
+  - `codigo_interno` puede ser None, string, comma-separated string o lista de strings.
+  - La función siempre devuelve un entero con el total (suma sobre códigos si se pasan varios).
+  """
+  conn = None
+  cursor = None
+  try:
+    conn = mysql.connector.connect(**config)
+    cursor = conn.cursor()
+
+    where_clauses = []
+    params = []
+
+    # Normalizar codigo_interno a lista si se entrega
+    codigo_list = None
+    if codigo_interno:
+      if isinstance(codigo_interno, list):
+        codigo_list = [str(c).strip() for c in codigo_interno if c is not None and str(c).strip() != '']
+      elif isinstance(codigo_interno, str) and ',' in codigo_interno:
+        codigo_list = [c.strip() for c in codigo_interno.split(',') if c.strip() != '']
+      else:
+        codigo_list = [str(codigo_interno).strip()]
+
+    if codigo_list:
+      placeholders = ','.join(['%s'] * len(codigo_list))
+      where_clauses.append(f"(disp.codigo_interno IN ({placeholders}))")
+      params.extend(codigo_list)
+
+    if fecha_inicio:
+      where_clauses.append("(d.fecha >= %s)")
+      params.append(fecha_inicio)
+
+    if fecha_fin:
+      where_clauses.append("(d.fecha <= %s)")
+      params.append(fecha_fin)
+
+    where_clause = ' AND '.join(where_clauses)
+    where_clause = f"WHERE {where_clause}" if where_clause else ""
+
+    # Hacemos una sola consulta que cuente todas las filas que cumplan los filtros
+    count_query = f"""
+      SELECT COUNT(*)
+      FROM
+        sensores_dev.datos AS d
+      LEFT JOIN
+        sensores_dev.sensores AS sens ON d.id_sensor = sens.id_sensor
+      LEFT JOIN
+        sensores_dev.sensores_en_dispositivo AS sed ON sens.id_sensor = sed.id_sensor
+      LEFT JOIN
+        sensores_dev.dispositivos AS disp ON sed.id_dispositivo = disp.id_dispositivo
+      {where_clause}
     """
-    Obtiene el número total de mediciones de un dispositivo específico aplicando los mismos filtros
-    que la consulta principal de listarDatosEstructurados.
-    
-    Args:
-        id_dispositivo: ID del dispositivo
-        filtered_args: Diccionario con filtros adicionales
-        fecha_inicio: Fecha de inicio del filtro (opcional)
-        fecha_fin: Fecha de fin del filtro (opcional)
-    
-    Returns:
-        int: Número total de mediciones que cumplen los criterios
-    """
+    cursor.execute(count_query, params)
+    row = cursor.fetchone()
+    total_count = int(row[0]) if row and row[0] is not None else 0
+    return total_count
+
+  except mysql.connector.Error as e:
+    print(f"Error en base de datos al contar mediciones: {e}")
+    return 0
+  except Exception as e:
+    print(f"Error desconocido al contar mediciones: {e}")
+    return 0
+  finally:
     try:
-        conn = mysql.connector.connect(**config)
-        cursor = conn.cursor()
+      if cursor is not None:
+        cursor.close()
+    except Exception:
+      pass
+    try:
+      if conn is not None and conn.is_connected():
+        conn.close()
+    except Exception:
+      pass
 
-        # Construir las cláusulas WHERE con los mismos filtros de la consulta principal
-        where_clauses = []
-        params = []
 
-        # Filtro por dispositivo
-        if id_dispositivo:
-            where_clauses.append("(disp.id_dispositivo = %s)")
-            params.append(id_dispositivo)
-        # Filtro por dispositivo
-        if codigo_interno:
-            where_clauses.append("(disp.codigo_interno = %s)")
-            params.append(codigo_interno)
+def f_dispositivos_por_proyecto(id_proyecto):
+  try:
+    conn = mysql.connector.connect(**config)
+    cursor = conn.cursor()
+    sql_query = "SELECT DISTINCT codigo_interno FROM sensores_dev.dispositivos WHERE id_proyecto = %s"
+    params = [id_proyecto]
+    cursor.execute(sql_query, params)
+    rows = cursor.fetchall()
 
-        # Rango de fechas
-        if fecha_inicio:
-            where_clauses.append("(d.fecha >= %s)")
-            params.append(fecha_inicio)
-        
-        if fecha_fin:
-            where_clauses.append("(d.fecha <= %s)")
-            params.append(fecha_fin)
 
-        # Filtros adicionales
-        if filtered_args:
-            for key, values in filtered_args.items():
-                or_conditions = " OR ".join([f"{key}=%s" for _ in values])
-                where_clauses.append(f"({or_conditions})")
-                params.extend(values)
-
-        where_clause = ' AND '.join(where_clauses)
-        where_clause = f"WHERE {where_clause}" if where_clause else ""
-
-        # Consulta optimizada para contar solamente
-        count_query = f"""
-            SELECT COUNT(*)
-            FROM
-                sensores_dev.datos AS d
-            LEFT JOIN
-                sensores_dev.sensores AS sens ON d.id_sensor = sens.id_sensor
-            LEFT JOIN
-                sensores_dev.sensores_en_dispositivo AS sed ON sens.id_sensor = sed.id_sensor
-            LEFT JOIN
-                sensores_dev.dispositivos AS disp ON sed.id_dispositivo = disp.id_dispositivo
-            {where_clause}
-        """
-        print(count_query, params)
-        cursor.execute(count_query, params)
-        total_count = cursor.fetchone()[0]
-        
-        return total_count
-
-    except mysql.connector.Error as e:
-        print(f"Error en base de datos al contar mediciones: {e}")
-        return 0
-    except Exception as e:
-        print(f"Error desconocido al contar mediciones: {e}")
-        return 0
-    finally:
-        if conn.is_connected():
-            cursor.close()
-            conn.close()
+    return [row[0] for row in rows]
+  except mysql.connector.Error as e:
+    print(f"Error DB en f_numero_mediciones_por_proyecto: {e}")
+    return []
+  except Exception as e:
+    print(f"Error desconocido en f_numero_mediciones_por_proyecto: {e}")
+    return []
+  finally:
+    if 'conn' in locals() and conn.is_connected():
+      cursor.close()
+      conn.close()
 
 def f_numero_variables_por_proyecto(id_proyecto):
     try:
@@ -2815,5 +2409,8 @@ def f_numero_variables_por_proyecto(id_proyecto):
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=8084)
+    # from eventlet import wsgi
+    # import eventlet
+    # eventlet.monkey_patch()
     # socketio.run(app, host='0.0.0.0', port=8084, debug=True)
 

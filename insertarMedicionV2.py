@@ -4,8 +4,7 @@ import mysql.connector
 from datetime import datetime
 import os
 
-# Importar socketio desde el archivo principal
-# from app import socketio
+
 
 load_dotenv()
 config = {
@@ -333,8 +332,10 @@ def insertar_medicion_v2():
         
         
         # Emitir mensaje por SocketIO después del commit exitoso
-        socketio = current_app.extensions['socketio']
-        socketio.emit('medicion_insertada', data_websocket)
+        # socketio = current_app.extensions['socketio']
+        # Importar socketio desde el archivo principal
+        # from app import socketio
+        # socketio.emit('medicion_insertada', "data_websocket")
         # return jsonify({'status': 'success', 'message': 'Registro insertado correctamente'}), 201, {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'}
         return jsonify({'status': 'success', 'message': 'Registro insertado correctamente', "data": res}), 201, {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'}
 
