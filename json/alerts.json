@@ -1,0 +1,22 @@
+[
+  {
+    "id": "alert_1760561929131",
+    "projectId": 1,
+    "projectLabel": "1. Licitación CMPC",
+    "ruleType": "parametros",
+    "validationId": "range_threshold",
+    "parameter": "Divisor de Voltaje [Voltaje (V)]",
+    "config": {
+      "operador": "<",
+      "limite": 1
+    },
+    "email": [
+      "dkressing@udd.cl",
+      "dkressing@outlook.com"
+    ],
+    "applyToAllDevices": true,
+    "targetDevices": [],
+    "active": true,
+    "ultima_validacion": "2025-10-15T18:00:09.905495"
+  }
+]

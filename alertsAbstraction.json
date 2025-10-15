@@ -1,0 +1,340 @@
+{
+    "version": "1.2-slim",
+    "global": {
+        "timezone": "America/Santiago",
+        "cooldown": "PT10M",
+        "deduplicacion": {
+            "ventana": "PT5M",
+            "clave": [
+                "id_regla",
+                "dispositivo_id",
+                "parametro"
+            ]
+        },
+        "email": {
+            "from": "servidorcmas@gmail.com",
+            "subject_prefix": "[ALERTA]"
+        }
+    },
+    "fecha_de_medicion": {
+        "validaciones": [
+             {
+                "id": "missing_value",
+                "nombre": "Valor ausente/nulo",
+                "descripcion": "Valor nulo/vacío/NaN. Pérdida de dato o falla de medición."
+            },
+            {
+                "id": "stale_data",
+                "nombre": "Dato atrasado",
+                "descripcion": "La muestra llegó “vieja” (timestamp anterior a ahora − max_age). Detecta atrasos/colas.",
+                "config": {
+                    "max_age": [
+                        "PT30S",
+                        "PT1M",
+                        "PT2M",
+                        "PT5M",
+                        "PT10M",
+                        "PT15M",
+                        "PT30M",
+                        "PT45M",
+                        "PT1H",
+                        "PT1H30M",
+                        "PT2H",
+                        "PT3H",
+                        "PT6H",
+                        "PT12H",
+                        "P1D",
+                        "P2D",
+                        "P3D",
+                        "P7D",
+                        "P14D",
+                        "P30D"
+                    ]
+                }
+            },
+            {
+                "id": "downtime",
+                "nombre": "Tiempo de inactividad",
+                "descripcion": "No se reciben mediciones dentro del intervalo esperado (más allá de max_age). Indica caída del sensor, pérdida de conectividad o detención del muestreo.",
+                "config": {
+                    "max_age": [
+                        "PT30S",
+                        "PT1M",
+                        "PT2M",
+                        "PT5M",
+                        "PT10M",
+                        "PT15M",
+                        "PT30M",
+                        "PT45M",
+                        "PT1H",
+                        "PT1H30M",
+                        "PT2H",
+                        "PT3H",
+                        "PT6H",
+                        "PT12H",
+                        "P1D",
+                        "P2D",
+                        "P3D",
+                        "P7D",
+                        "P14D",
+                        "P30D"
+                    ]
+                }
+            },
+            {
+                "id": "future_dating",
+                "nombre": "Fecha futura",
+                "descripcion": "Timestamp en el futuro más allá de una tolerancia. Indica reloj/ZH mal configurados.",
+                "config": {
+                    "tolerancia": [
+                        "PT30S",
+                        "PT1M",
+                        "PT2M",
+                        "PT5M",
+                        "PT10M",
+                        "PT15M",
+                        "PT30M",
+                        "PT45M",
+                        "PT1H",
+                        "PT1H30M",
+                        "PT2H",
+                        "PT3H",
+                        "PT6H",
+                        "PT12H",
+                        "P1D",
+                        "P2D",
+                        "P3D",
+                        "P7D",
+                        "P14D",
+                        "P30D"
+                    ]
+                }
+            },
+            {
+                "id": "gap_detection",
+                "nombre": "Brecha de muestreo",
+                "descripcion": "El tiempo entre dos mediciones consecutivas supera un umbral. Señal de caída o detención.",
+                "config": {
+                    "intervalo_esperado": [
+                        "PT30S",
+                        "PT1M",
+                        "PT2M",
+                        "PT5M",
+                        "PT10M",
+                        "PT15M",
+                        "PT30M",
+                        "PT45M",
+                        "PT1H",
+                        "PT1H30M",
+                        "PT2H",
+                        "PT3H",
+                        "PT6H",
+                        "PT12H",
+                        "P1D",
+                        "P2D",
+                        "P3D",
+                        "P7D",
+                        "P14D",
+                        "P30D"
+                    ],
+                    "umbral_gap": [
+                        "PT30S",
+                        "PT1M",
+                        "PT2M",
+                        "PT5M",
+                        "PT10M",
+                        "PT15M",
+                        "PT30M",
+                        "PT45M",
+                        "PT1H",
+                        "PT1H30M",
+                        "PT2H",
+                        "PT3H",
+                        "PT6H",
+                        "PT12H",
+                        "P1D",
+                        "P2D",
+                        "P3D",
+                        "P7D",
+                        "P14D",
+                        "P30D"
+                    ],
+                    "clave_agrupacion": [
+                        "dispositivo_id"
+                    ]
+                }
+            },
+            {
+                "id": "out_of_order",
+                "nombre": "Desorden temporal",
+                "descripcion": "Llegó una medición con timestamp menor al último conocido. Reenvíos fuera de orden.",
+                "config": {
+                    "clave_agrupacion": [
+                        "dispositivo_id"
+                    ]
+                }
+            },
+            {
+                "id": "duplicate_timestamp",
+                "nombre": "Timestamp duplicado",
+                "descripcion": "Dos muestras con exactamente el mismo timestamp para la misma entidad. Duplicados.",
+                "config": {
+                    "clave_agrupacion": [
+                        "dispositivo_id"
+                    ]
+                }
+            }
+        ]
+    },
+    "parametros": {
+        "tipos": [
+            "numeric",
+            "string",
+            "boolean"
+        ],
+        "validaciones": [
+            {
+                "id": "missing_value",
+                "nombre": "Valor ausente/nulo",
+                "descripcion": "Valor nulo/vacío/NaN. Pérdida de dato o falla de medición."
+            },
+            {
+                "id": "between_range",
+                "nombre": "Rango esperado",
+                "descripcion": "Valor fuera/dentro de un rango [min, max]. Verifica cumplimiento de límites esperados/normativos.",
+                "aplica_a": [
+                    "numeric"
+                ],
+                "config": {
+                    "min": 0,
+                    "max": 100,
+                    "inclusivo": true,
+                    "alertar_si": [
+                        "fuera",
+                        "dentro"
+                    ]
+                }
+            },
+            {
+                "id": "range_threshold",
+                "nombre": "Umbral absoluto",
+                "descripcion": "Comparación simple contra un límite usando un operador (>, <, etc.). Umbral directo.",
+                "aplica_a": [
+                    "numeric"
+                ],
+                "config": {
+                    "operador": [
+                        ">",
+                        "<",
+                        "=",
+                        "<=",
+                        ">="
+                    ],
+                    "limite": 100
+                }
+            },
+            {
+                "id": "rate_of_change",
+                "nombre": "Velocidad de cambio",
+                "descripcion": "Cambio absoluto o porcentual entre lecturas supera un tope. Detecta saltos bruscos/anómalos.",
+                "aplica_a": [
+                    "numeric"
+                ],
+                "config": {
+                    "ventana_muestras": 1,
+                    "max_delta_pct": 20
+                }
+            },
+            {
+                "id": "stuck_value",
+                "nombre": "Valor congelado",
+                "descripcion": "Sin (o casi sin) variación durante una ventana. Sensor “pegado”/bloqueado.",
+                "aplica_a": [
+                    "numeric",
+                    "boolean"
+                ],
+                "config": {
+                    "ventana_muestras": 10,
+                    "max_unicos": 1
+                }
+            },
+            {
+                "id": "cross_parameter_rule",
+                "nombre": "Regla entre parámetros",
+                "descripcion": "Relación lógica entre dos campos (p. ej., temp_min <= temp_max). Consistencia interna.",
+                "aplica_a": [
+                    "numeric"
+                ],
+                "config": {
+                    "izq": "parametro_izq",
+                    "relacion": [
+                        "<",
+                        ">",
+                        "<=",
+                        ">=",
+                        "=",
+                        "!="
+                    ],
+                    "der": "parametro_der"
+                }
+            }
+        ]
+    },
+    "alerta": {
+        "canal": "email",
+        "severity": "info|low|medium|high|critical"
+    },
+    "ejemplos": [
+        {
+            "id_regla": "R1",
+            "tipo": "fecha_de_medicion",
+            "validacion": "stale_data",
+            "config": {
+                "max_age": "PT20M"
+            },
+            "severity": "medium",
+            "email": {
+                "to": [
+                    "ops@org.cl"
+                ],
+                "subject": "[ALERTA] Dato atrasado en {{dispositivo_id}}"
+            }
+        },
+        {
+            "id_regla": "R2",
+            "tipo": "parametros",
+            "parametro": "ph",
+            "validacion": "between_range",
+            "config": {
+                "min": 6.5,
+                "max": 8.5,
+                "inclusivo": true,
+                "alertar_si": "fuera"
+            },
+            "severity": "high",
+            "email": {
+                "to": [
+                    "planta@org.cl"
+                ],
+                "subject": "[ALERTA] pH fuera de rango ({{valor}})"
+            }
+        },
+        {
+            "id_regla": "R3",
+            "tipo": "parametros",
+            "parametro": "presion",
+            "validacion": "rate_of_change",
+            "config": {
+                "ventana_muestras": 1,
+                "max_delta_pct": 25
+            },
+            "severity": "medium",
+            "email": {
+                "to": [
+                    "mantencion@org.cl"
+                ],
+                "subject": "[ALERTA] Cambio brusco de presión en {{dispositivo_id}}"
+            }
+        }
+    ]
+}

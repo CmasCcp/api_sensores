@@ -15,6 +15,7 @@ from openpyxl.worksheet.table import Table, TableStyleInfo
 from openpyxl.styles import PatternFill
 
 from insertarMedicionV2 import insertar_medicion_bp as insertar_medicion_v2_bp
+from alertas import alertas_bp
 # from flask_socketio import SocketIO, emit
 
 
@@ -66,7 +67,7 @@ app.config['SWAGGER'] = {
     ]
 }
 
-CORS(app)
+CORS(app, origins=["*", "http://localhost:5173"])
 swagger = Swagger(app)
 
 ALLOWED_TABLES_PROP = [
@@ -159,6 +160,11 @@ print(config)
 #             'status': 'error',
 #             'message': f'WebSocket test failed: {str(e)}'
 #         }), 500
+
+
+app.register_blueprint(insertar_medicion_v2_bp)
+app.register_blueprint(alertas_bp)
+
 
 @app.route('/endovenosaDummy', methods=['GET'])
 def endovenosa_dummy():
@@ -613,13 +619,16 @@ def insertar_medicion():
         timestamp_float = float(timestamps[i])
         datetime_obj = datetime.fromtimestamp(timestamp_float)
         formatted_datetime = datetime_obj.strftime('%Y-%m-%d %H:%M:%S')
+        
+        # Convertir valores vacíos a None para insertarlos como NULL en la base de datos
+        valor = values[i] if values[i] and values[i].strip() else None
 
         measurements.append({
             "timestamp":formatted_datetime, #timestamps[i],
             "sesionId": sesiones_ids[i],
             "sensorId": sensor_ids[i],
             "variableId": variable_ids[i],
-            "value": values[i]
+            "value": valor
         })
 
     try:
@@ -667,7 +676,6 @@ def insertar_medicion():
             cursor.close()
             conn.close()
 
-app.register_blueprint(insertar_medicion_v2_bp)
 
 @app.route('/listarTablas', methods=['GET'])
 def listar_tablas():
@@ -2405,6 +2413,11 @@ def f_numero_variables_por_proyecto(id_proyecto):
         if 'conn' in locals() and conn.is_connected():
             cursor.close()
             conn.close()
+
+
+# Alertas
+
+
 
 
 if __name__ == "__main__":

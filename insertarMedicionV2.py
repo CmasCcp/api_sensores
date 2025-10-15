@@ -294,12 +294,15 @@ def insertar_medicion_v2():
         datetime_obj = datetime.fromtimestamp(timestamp_float)
         formatted_datetime = datetime_obj.strftime('%Y-%m-%d %H:%M:%S')
 
+        # Convertir valores vacíos a None para insertarlos como NULL en la base de datos
+        valor = values[i] if values[i] and values[i].strip() else None
+
         measurements.append({
             "timestamp":formatted_datetime, #timestamps[i],
             "sesionId": sesiones_ids[i],
             "sensorId": sensor_ids[i],
             "variableId": variable_ids[i],
-            "value": values[i]
+            "value": valor
         })
 
     try:
