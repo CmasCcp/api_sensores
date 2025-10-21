@@ -541,6 +541,500 @@ def _validate_range_threshold_for_alert(alert):
                 conn.close()
         except Exception:
             pass
+def _validate_between_range_for_alert(alert):
+    """
+    Valida si hay valores dentro o fuera de un rango específico
+    
+    Configuración esperada en alert["config"]:
+    {
+        "min": 0,           # Valor mínimo del rango
+        "max": 40,          # Valor máximo del rango
+        "inclusivo": true,  # Si los límites son inclusivos (<=, >=) o exclusivos (<, >)
+        "alertar_si": "fuera"  # "fuera" o "dentro" - cuándo alertar
+    }
+    
+    Args:
+        alert: Objeto de alerta con la configuración
+    
+    Returns:
+        dict: Resultado de la validación
+    """
+    try:
+        config = _get_db_config()
+        conn = mysql.connector.connect(**config)
+        cursor = conn.cursor()
+        
+        project_id = alert["projectId"]
+        parameter = alert["parameter"]
+        
+        # Obtener configuración del rango
+        alert_config = alert.get("config", {})
+        min_value = alert_config.get("min")
+        max_value = alert_config.get("max")
+        inclusivo = alert_config.get("inclusivo", True)
+        alertar_si = alert_config.get("alertar_si", "fuera")
+        
+        # Validar configuración
+        if min_value is None or max_value is None:
+            return {
+                "status": "error",
+                "message": "Se requieren valores 'min' y 'max' en la configuración"
+            }
+        
+        if min_value >= max_value:
+            return {
+                "status": "error",
+                "message": "El valor 'min' debe ser menor que 'max'"
+            }
+        
+        if alertar_si not in ["fuera", "dentro"]:
+            return {
+                "status": "error",
+                "message": "El campo 'alertar_si' debe ser 'fuera' o 'dentro'"
+            }
+
+        validation_time = datetime.now()
+        
+        # Determinar dispositivos a validar
+        if alert.get("applyToAllDevices", True):
+            device_query = """
+                SELECT id_dispositivo, codigo_interno 
+                FROM sensores_dev.dispositivos 
+                WHERE id_proyecto = %s
+            """
+            device_params = [project_id]
+        else:
+            target_devices = alert.get("targetDevices", [])
+            if not target_devices:
+                return {
+                    "status": "error",
+                    "message": "No hay dispositivos objetivo especificados"
+                }
+            
+            device_placeholders = ','.join(['%s'] * len(target_devices))
+            device_query = f"""
+                SELECT id_dispositivo, codigo_interno 
+                FROM sensores_dev.dispositivos 
+                WHERE id_proyecto = %s AND codigo_interno IN ({device_placeholders})
+            """
+            device_params = [project_id] + list(target_devices)
+        
+        cursor.execute(device_query, device_params)
+        project_devices = cursor.fetchall()
+        
+        if not project_devices:
+            return {
+                "status": "error",
+                "message": "No se encontraron dispositivos para validar"
+            }
+        
+        # Construir condición SQL según configuración
+        if inclusivo:
+            if alertar_si == "fuera":
+                # Valores fuera del rango (inclusive): valor < min OR valor > max
+                range_condition = "AND (CAST(d.valor AS DECIMAL(10,2)) < %s OR CAST(d.valor AS DECIMAL(10,2)) > %s)"
+            else:
+                # Valores dentro del rango (inclusive): valor >= min AND valor <= max
+                range_condition = "AND (CAST(d.valor AS DECIMAL(10,2)) >= %s AND CAST(d.valor AS DECIMAL(10,2)) <= %s)"
+        else:
+            if alertar_si == "fuera":
+                # Valores fuera del rango (exclusive): valor <= min OR valor >= max
+                range_condition = "AND (CAST(d.valor AS DECIMAL(10,2)) <= %s OR CAST(d.valor AS DECIMAL(10,2)) >= %s)"
+            else:
+                # Valores dentro del rango (exclusive): valor > min AND valor < max
+                range_condition = "AND (CAST(d.valor AS DECIMAL(10,2)) > %s AND CAST(d.valor AS DECIMAL(10,2)) < %s)"
+        
+        # Buscar valores que cumplen la condición en las últimas 24 horas
+        end_time = validation_time
+        start_time = end_time - timedelta(hours=24)
+        
+        devices_with_issues = []
+        
+        for device_id, codigo_interno in project_devices:
+            # Consultar valores que cumplen la condición de rango
+            range_query = f"""
+                SELECT d.id_dato, d.fecha, d.valor
+                FROM sensores_dev.datos AS d
+                LEFT JOIN sensores_dev.variables AS v ON d.id_variable = v.id_variable
+                LEFT JOIN sensores_dev.sensores AS sens ON d.id_sensor = sens.id_sensor
+                LEFT JOIN sensores_dev.sensores_tipo AS st ON sens.id_sensor_tipo = st.id_sensor_tipo
+                LEFT JOIN sensores_dev.sensores_en_dispositivo AS sed ON sens.id_sensor = sed.id_sensor
+                LEFT JOIN sensores_dev.dispositivos AS disp ON sed.id_dispositivo = disp.id_dispositivo
+                WHERE disp.id_dispositivo = %s
+                AND CONCAT(st.modelo, ' [', v.descripcion, ' (', v.unidad, ')]') = %s
+                AND d.fecha >= %s AND d.fecha <= %s
+                AND d.valor IS NOT NULL
+                {range_condition}
+                ORDER BY d.fecha DESC
+            """
+            
+            cursor.execute(range_query, [device_id, parameter, start_time, end_time, min_value, max_value])
+            range_results = cursor.fetchall()
+            
+            # Contar el total de mediciones válidas para contexto
+            total_count_query = """
+                SELECT COUNT(*) as total
+                FROM sensores_dev.datos AS d
+                LEFT JOIN sensores_dev.variables AS v ON d.id_variable = v.id_variable
+                LEFT JOIN sensores_dev.sensores AS sens ON d.id_sensor = sens.id_sensor
+                LEFT JOIN sensores_dev.sensores_tipo AS st ON sens.id_sensor_tipo = st.id_sensor_tipo
+                LEFT JOIN sensores_dev.sensores_en_dispositivo AS sed ON sens.id_sensor = sed.id_sensor
+                LEFT JOIN sensores_dev.dispositivos AS disp ON sed.id_dispositivo = disp.id_dispositivo
+                WHERE disp.id_dispositivo = %s
+                AND CONCAT(st.modelo, ' [', v.descripcion, ' (', v.unidad, ')]') = %s
+                AND d.fecha >= %s AND d.fecha <= %s
+                AND d.valor IS NOT NULL
+            """
+            
+            cursor.execute(total_count_query, [device_id, parameter, start_time, end_time])
+            total_count = cursor.fetchone()[0]
+            
+            if range_results:
+                devices_with_issues.append({
+                    "device_id": device_id,
+                    "codigo_interno": codigo_interno,
+                    "issue_type": f"values_{alertar_si}_range",
+                    "range_violations": len(range_results),
+                    "total_measurements": total_count,
+                    "range_config": {
+                        "min": min_value,
+                        "max": max_value,
+                        "inclusivo": inclusivo,
+                        "alertar_si": alertar_si
+                    },
+                    "violating_values": [
+                        {
+                            "id_dato": row[0],
+                            "fecha": row[1].isoformat() if row[1] else None,
+                            "valor": float(row[2]) if row[2] is not None else None
+                        } for row in range_results[:10]  # Limitar a 10 ejemplos
+                    ]
+                })
+        
+        # Enviar correo si hay dispositivos con problemas
+        email_results = []
+        if devices_with_issues:
+            alert_emails = alert.get("email", [])
+            if isinstance(alert_emails, str):
+                alert_emails = [alert_emails]
+            
+            for device_issue in devices_with_issues:
+                try:
+                    range_desc = f"{min_value}-{max_value}"
+                    inclusivo_desc = "inclusive" if inclusivo else "exclusive"
+                    titulo = f"Alerta: Valores {alertar_si} del rango {range_desc} ({inclusivo_desc}) para {parameter} en dispositivo {device_issue['codigo_interno']}"
+                    
+                    email_result = send_email_alert(
+                        TITULO=titulo,
+                        PROYECTO_ID=project_id,
+                        CODIGO_INTERNO=device_issue["codigo_interno"],
+                        FECHA=validation_time.strftime('%Y-%m-%d %H:%M:%S'),
+                        receivers=alert_emails if alert_emails else None
+                    )
+                    email_results.append({
+                        "device": device_issue["codigo_interno"],
+                        "email_result": email_result
+                    })
+                except Exception as email_error:
+                    print(f"{datetime.now()}: Error enviando correo para dispositivo {device_issue['codigo_interno']}: {email_error}")
+                    email_results.append({
+                        "device": device_issue["codigo_interno"],
+                        "email_result": {
+                            "success": False,
+                            "error": str(email_error)
+                        }
+                    })
+        
+        # Actualizar fecha de última validación en la alerta
+        _update_alert_last_validation(alert["id"], validation_time)
+        
+        # Calcular estadísticas de correos enviados
+        total_emails_sent = sum(result["email_result"].get("emails_sent", 0) for result in email_results)
+        total_emails_failed = sum(result["email_result"].get("emails_failed", 0) for result in email_results)
+        
+        return {
+            "status": "success",
+            "alert_id": alert["id"],
+            "validation_type": "between_range",
+            "project_id": project_id,
+            "parameter": parameter,
+            "range_config": {
+                "min": min_value,
+                "max": max_value,
+                "inclusivo": inclusivo,
+                "alertar_si": alertar_si
+            },
+            "validation_time": validation_time.isoformat(),
+            "period_checked": f"{start_time.isoformat()} a {end_time.isoformat()}",
+            "total_devices_checked": len(project_devices),
+            "devices_with_issues": len(devices_with_issues),
+            "total_violations": sum(device["range_violations"] for device in devices_with_issues),
+            "issues_found": devices_with_issues,
+            "email_notifications": {
+                "total_emails_sent": total_emails_sent,
+                "total_emails_failed": total_emails_failed,
+                "devices_notified": len(email_results),
+                "email_details": email_results
+            }
+        }
+        
+    except mysql.connector.Error as e:
+        return {
+            "status": "error",
+            "message": f"Error de base de datos: {str(e)}"
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Error inesperado: {str(e)}"
+        }
+    finally:
+        try:
+            if 'cursor' in locals():
+                cursor.close()
+            if 'conn' in locals() and conn.is_connected():
+                conn.close()
+        except Exception:
+            pass
+def _validate_rate_of_change_for_alert(alert):
+    """
+    Valida cambios bruscos en los valores (pendiente/tasa de cambio)
+    
+    Configuración esperada en alert["config"]:
+    {
+        "ventana_muestras": 1,      # Número de muestras anteriores a comparar
+        "max_delta_pct": 100        # Máximo porcentaje de cambio permitido
+    }
+    
+    Args:
+        alert: Objeto de alerta con la configuración
+    
+    Returns:
+        dict: Resultado de la validación
+    """
+    try:
+        config = _get_db_config()
+        conn = mysql.connector.connect(**config)
+        cursor = conn.cursor()
+        
+        project_id = alert["projectId"]
+        parameter = alert["parameter"]
+        
+        # Obtener configuración de tasa de cambio
+        alert_config = alert.get("config", {})
+        ventana_muestras = alert_config.get("ventana_muestras", 1)
+        max_delta_pct = alert_config.get("max_delta_pct", 100)
+        
+        # Validar configuración
+        if ventana_muestras < 1:
+            return {
+                "status": "error",
+                "message": "La ventana de muestras debe ser al menos 1"
+            }
+        
+        if max_delta_pct <= 0:
+            return {
+                "status": "error",
+                "message": "El porcentaje máximo de cambio debe ser mayor a 0"
+            }
+
+        validation_time = datetime.now()
+        
+        # Determinar dispositivos a validar
+        if alert.get("applyToAllDevices", True):
+            device_query = """
+                SELECT id_dispositivo, codigo_interno 
+                FROM sensores_dev.dispositivos 
+                WHERE id_proyecto = %s
+            """
+            device_params = [project_id]
+        else:
+            target_devices = alert.get("targetDevices", [])
+            if not target_devices:
+                return {
+                    "status": "error",
+                    "message": "No hay dispositivos objetivo especificados"
+                }
+            
+            device_placeholders = ','.join(['%s'] * len(target_devices))
+            device_query = f"""
+                SELECT id_dispositivo, codigo_interno 
+                FROM sensores_dev.dispositivos 
+                WHERE id_proyecto = %s AND codigo_interno IN ({device_placeholders})
+            """
+            device_params = [project_id] + list(target_devices)
+        
+        cursor.execute(device_query, device_params)
+        project_devices = cursor.fetchall()
+        
+        if not project_devices:
+            return {
+                "status": "error",
+                "message": "No se encontraron dispositivos para validar"
+            }
+        
+        # Buscar cambios bruscos en las últimas 24 horas
+        end_time = validation_time
+        start_time = end_time - timedelta(hours=24)
+        
+        devices_with_issues = []
+        
+        for device_id, codigo_interno in project_devices:
+            # Obtener todos los valores ordenados por fecha (más recientes primero)
+            values_query = """
+                SELECT d.id_dato, d.fecha, d.valor
+                FROM sensores_dev.datos AS d
+                LEFT JOIN sensores_dev.variables AS v ON d.id_variable = v.id_variable
+                LEFT JOIN sensores_dev.sensores AS sens ON d.id_sensor = sens.id_sensor
+                LEFT JOIN sensores_dev.sensores_tipo AS st ON sens.id_sensor_tipo = st.id_sensor_tipo
+                LEFT JOIN sensores_dev.sensores_en_dispositivo AS sed ON sens.id_sensor = sed.id_sensor
+                LEFT JOIN sensores_dev.dispositivos AS disp ON sed.id_dispositivo = disp.id_dispositivo
+                WHERE disp.id_dispositivo = %s
+                AND CONCAT(st.modelo, ' [', v.descripcion, ' (', v.unidad, ')]') = %s
+                AND d.fecha >= %s AND d.fecha <= %s
+                AND d.valor IS NOT NULL
+                AND CAST(d.valor AS DECIMAL(10,2)) > 0
+                ORDER BY d.fecha ASC
+            """
+            
+            cursor.execute(values_query, [device_id, parameter, start_time, end_time])
+            values_results = cursor.fetchall()
+            
+            if len(values_results) < ventana_muestras + 1:
+                # No hay suficientes muestras para calcular cambios
+                continue
+            
+            # Analizar cambios bruscos
+            rapid_changes = []
+            
+            for i in range(ventana_muestras, len(values_results)):
+                current_value = float(values_results[i][2])
+                
+                # Calcular promedio de las muestras anteriores en la ventana
+                window_values = [float(values_results[j][2]) for j in range(i - ventana_muestras, i)]
+                avg_previous = sum(window_values) / len(window_values)
+                
+                # Evitar división por cero
+                if avg_previous == 0:
+                    continue
+                
+                # Calcular porcentaje de cambio
+                delta_pct = abs((current_value - avg_previous) / avg_previous) * 100
+                
+                if delta_pct > max_delta_pct:
+                    rapid_changes.append({
+                        "id_dato": values_results[i][0],
+                        "fecha": values_results[i][1].isoformat() if values_results[i][1] else None,
+                        "valor_actual": current_value,
+                        "valor_promedio_anterior": round(avg_previous, 2),
+                        "delta_porcentaje": round(delta_pct, 2),
+                        "ventana_anterior": [
+                            {
+                                "fecha": values_results[j][1].isoformat() if values_results[j][1] else None,
+                                "valor": float(values_results[j][2])
+                            } for j in range(i - ventana_muestras, i)
+                        ]
+                    })
+            
+            # Contar total de mediciones para contexto
+            total_count = len(values_results)
+            
+            if rapid_changes:
+                devices_with_issues.append({
+                    "device_id": device_id,
+                    "codigo_interno": codigo_interno,
+                    "issue_type": "rapid_change",
+                    "rapid_changes_count": len(rapid_changes),
+                    "total_measurements": total_count,
+                    "rate_config": {
+                        "ventana_muestras": ventana_muestras,
+                        "max_delta_pct": max_delta_pct
+                    },
+                    "rapid_changes": rapid_changes[:10]  # Limitar a 10 ejemplos
+                })
+        
+        # Enviar correo si hay dispositivos con problemas
+        email_results = []
+        if devices_with_issues:
+            alert_emails = alert.get("email", [])
+            if isinstance(alert_emails, str):
+                alert_emails = [alert_emails]
+            
+            for device_issue in devices_with_issues:
+                try:
+                    titulo = f"Alerta: Cambios bruscos detectados en {parameter} para dispositivo {device_issue['codigo_interno']} (>{max_delta_pct}%)"
+                    
+                    email_result = send_email_alert(
+                        TITULO=titulo,
+                        PROYECTO_ID=project_id,
+                        CODIGO_INTERNO=device_issue["codigo_interno"],
+                        FECHA=validation_time.strftime('%Y-%m-%d %H:%M:%S'),
+                        receivers=alert_emails if alert_emails else None
+                    )
+                    email_results.append({
+                        "device": device_issue["codigo_interno"],
+                        "email_result": email_result
+                    })
+                except Exception as email_error:
+                    print(f"{datetime.now()}: Error enviando correo para dispositivo {device_issue['codigo_interno']}: {email_error}")
+                    email_results.append({
+                        "device": device_issue["codigo_interno"],
+                        "email_result": {
+                            "success": False,
+                            "error": str(email_error)
+                        }
+                    })
+        
+        # Actualizar fecha de última validación en la alerta
+        _update_alert_last_validation(alert["id"], validation_time)
+        
+        # Calcular estadísticas de correos enviados
+        total_emails_sent = sum(result["email_result"].get("emails_sent", 0) for result in email_results)
+        total_emails_failed = sum(result["email_result"].get("emails_failed", 0) for result in email_results)
+        
+        return {
+            "status": "success",
+            "alert_id": alert["id"],
+            "validation_type": "rate_of_change",
+            "project_id": project_id,
+            "parameter": parameter,
+            "rate_config": {
+                "ventana_muestras": ventana_muestras,
+                "max_delta_pct": max_delta_pct
+            },
+            "validation_time": validation_time.isoformat(),
+            "period_checked": f"{start_time.isoformat()} a {end_time.isoformat()}",
+            "total_devices_checked": len(project_devices),
+            "devices_with_issues": len(devices_with_issues),
+            "total_rapid_changes": sum(device["rapid_changes_count"] for device in devices_with_issues),
+            "issues_found": devices_with_issues,
+            "email_notifications": {
+                "total_emails_sent": total_emails_sent,
+                "total_emails_failed": total_emails_failed,
+                "devices_notified": len(email_results),
+                "email_details": email_results
+            }
+        }
+        
+    except mysql.connector.Error as e:
+        return {
+            "status": "error",
+            "message": f"Error de base de datos: {str(e)}"
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Error inesperado: {str(e)}"
+        }
+    finally:
+        try:
+            if 'cursor' in locals():
+                cursor.close()
+            if 'conn' in locals() and conn.is_connected():
+                conn.close()
+        except Exception:
+            pass
+
 
 @alertas_bp.route("/validarAlerta", methods=["POST"])
 def validar_alerta():
@@ -585,6 +1079,10 @@ def validar_alerta():
         result = _validate_missing_value_for_alert(target_alert)
     elif validation_id == "range_threshold":
         result = _validate_range_threshold_for_alert(target_alert)
+    elif validation_id == "between_range":
+        result = _validate_between_range_for_alert(target_alert)
+    elif validation_id == "rate_of_change":
+        result = _validate_rate_of_change_for_alert(target_alert)
     else:
         return make_response(jsonify({"error": f"Tipo de validación no soportado: {validation_id}"}), 400)
     
@@ -615,6 +1113,10 @@ def validar_todas_las_alertas():
             result = _validate_missing_value_for_alert(alert)
         elif validation_id == "range_threshold":
             result = _validate_range_threshold_for_alert(alert)
+        elif validation_id == "between_range":
+            result = _validate_between_range_for_alert(alert)
+        elif validation_id == "rate_of_change":
+            result = _validate_rate_of_change_for_alert(alert)
         else:
             result = {
                 "status": "error",
@@ -673,6 +1175,10 @@ def validar_alertas_por_proyecto():
             result = _validate_missing_value_for_alert(alert)
         elif validation_id == "range_threshold":
             result = _validate_range_threshold_for_alert(alert)
+        elif validation_id == "between_range":
+            result = _validate_between_range_for_alert(alert)
+        elif validation_id == "rate_of_change":
+            result = _validate_rate_of_change_for_alert(alert)
         else:
             result = {
                 "status": "error",

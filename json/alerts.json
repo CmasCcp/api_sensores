@@ -1,22 +1,19 @@
 [
   {
-    "id": "alert_1760561929131",
+    "id": "alert_1760639129253",
     "projectId": 1,
     "projectLabel": "1. Licitación CMPC",
     "ruleType": "parametros",
-    "validationId": "range_threshold",
+    "validationId": "rate_of_change",
     "parameter": "Divisor de Voltaje [Voltaje (V)]",
     "config": {
-      "operador": "<",
-      "limite": 1
+      "ventana_muestras": 1,
+      "max_delta_pct": 100
     },
-    "email": [
-      "dkressing@udd.cl",
-      "dkressing@outlook.com"
-    ],
+    "email": [],
     "applyToAllDevices": true,
     "targetDevices": [],
     "active": true,
-    "ultima_validacion": "2025-10-15T18:00:09.905495"
+    "ultima_validacion": "2025-10-16T15:30:27.935102"
   }
 ]
