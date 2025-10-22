@@ -323,8 +323,8 @@ def insertar_medicion_v2():
         cursor = conn.cursor()
 
         for measurement in measurements:
-            valores = [measurement['sensorId'], measurement['value'], measurement['timestamp'], measurement['variableId'], measurement['sesionId']]
-            sql_query = f"INSERT INTO datos (id_sensor, valor, fecha, id_variable, id_sesion) VALUES (%s, %s, %s, %s, %s)"
+            valores = [measurement['sensorId'], measurement['value'], measurement['timestamp'], measurement['variableId'], measurement['sesionId'], measurement['insertionTimestamp']]
+            sql_query = f"INSERT INTO datos (id_sensor, valor, fecha, id_variable, id_sesion, fecha_insercion) VALUES (%s, %s, %s, %s, %s, %s)"
             log_query = sql_query % tuple(valores)  # Para fines de depuración
             print("Consulta SQL para depuración:", log_query)
             cursor.execute(sql_query, valores)
