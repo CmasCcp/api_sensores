@@ -111,6 +111,7 @@ def listar_datos_estructurados_v2(args):
                 d.fecha,
                 d.id_sesion,
                 d.valor,
+                d.fecha_insercion,
                 CONCAT(st.modelo, ' [', v.descripcion, ' (', v.unidad, ')]') AS unidad_medida,
                 s.descripcion AS sesion_descripcion,
                 s.fecha_inicio,
@@ -158,7 +159,7 @@ def listar_datos_estructurados_v2(args):
             if not df.empty:
                 df = df.fillna("")
                 df_pivoted = df.pivot_table(
-                    index=["fecha", "id_sesion", "sesion_descripcion", "fecha_inicio", "ubicacion", "id_proyecto", "codigo_interno", "dispositivo_descripcion"],
+                    index=["fecha","fecha_insercion", "id_sesion", "sesion_descripcion", "fecha_inicio", "ubicacion", "id_proyecto", "codigo_interno", "dispositivo_descripcion"],
                     columns="unidad_medida",
                     values="valor",
                     aggfunc=list

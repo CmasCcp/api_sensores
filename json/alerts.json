@@ -1,0 +1,19 @@
+[
+  {
+    "id": "alert_1760639129253",
+    "projectId": 1,
+    "projectLabel": "1. Licitación CMPC",
+    "ruleType": "parametros",
+    "validationId": "rate_of_change",
+    "parameter": "Divisor de Voltaje [Voltaje (V)]",
+    "config": {
+      "ventana_muestras": 1,
+      "max_delta_pct": 100
+    },
+    "email": [],
+    "applyToAllDevices": true,
+    "targetDevices": [],
+    "active": true,
+    "ultima_validacion": "2025-10-16T15:30:27.935102"
+  }
+]

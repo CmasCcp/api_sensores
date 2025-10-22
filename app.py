@@ -15,6 +15,7 @@ from openpyxl.worksheet.table import Table, TableStyleInfo
 from openpyxl.styles import PatternFill
 
 from insertarMedicionV2 import insertar_medicion_bp as insertar_medicion_v2_bp
+from alertas import alertas_bp
 # from flask_socketio import SocketIO, emit
 
 
@@ -66,7 +67,7 @@ app.config['SWAGGER'] = {
     ]
 }
 
-CORS(app)
+CORS(app, origins=["*", "http://localhost:5173"])
 swagger = Swagger(app)
 
 ALLOWED_TABLES_PROP = [
@@ -159,6 +160,11 @@ print(config)
 #             'status': 'error',
 #             'message': f'WebSocket test failed: {str(e)}'
 #         }), 500
+
+
+app.register_blueprint(insertar_medicion_v2_bp)
+app.register_blueprint(alertas_bp)
+
 
 @app.route('/endovenosaDummy', methods=['GET'])
 def endovenosa_dummy():
@@ -609,17 +615,32 @@ def insertar_medicion():
     
     measurements = []
 
+    # Fecha de inserción (servidor)  
+    server_timestamp = datetime.now().timestamp()
+    insertion_timestamps = [str(server_timestamp)] * len(sensor_ids)
+
+
     for i in range(len(sensor_ids)):
         timestamp_float = float(timestamps[i])
         datetime_obj = datetime.fromtimestamp(timestamp_float)
         formatted_datetime = datetime_obj.strftime('%Y-%m-%d %H:%M:%S')
+        # fechas insercion
+        insertion_timestamp_float = float(insertion_timestamps[i])
+        insertion_datetime_obj = datetime.fromtimestamp(insertion_timestamp_float)
+        formatted_insertion_datetime = insertion_datetime_obj.strftime('%Y-%m-%d %H:%M:%S')
+
+        # print("Formatted datetime:", formatted_datetime)
+        print("Formatted insertion datetime:", formatted_insertion_datetime)
+        # Convertir valores vacíos a None para insertarlos como NULL en la base de datos
+        valor = values[i] if values[i] and values[i].strip() else None
 
         measurements.append({
             "timestamp":formatted_datetime, #timestamps[i],
             "sesionId": sesiones_ids[i],
             "sensorId": sensor_ids[i],
             "variableId": variable_ids[i],
-            "value": values[i]
+            "value": valor,
+            "insertionTimestamp": formatted_insertion_datetime
         })
 
     try:
@@ -627,8 +648,8 @@ def insertar_medicion():
         cursor = conn.cursor()
 
         for measurement in measurements:
-            valores = [measurement['sensorId'], measurement['value'], measurement['timestamp'], measurement['variableId'], measurement['sesionId']]
-            sql_query = f"INSERT INTO datos (id_sensor, valor, fecha, id_variable, id_sesion) VALUES (%s, %s, %s, %s, %s)"
+            valores = [measurement['sensorId'], measurement['value'], measurement['timestamp'], measurement['variableId'], measurement['sesionId'], measurement['insertionTimestamp']]
+            sql_query = f"INSERT INTO datos (id_sensor, valor, fecha, id_variable, id_sesion, fecha_insercion) VALUES (%s, %s, %s, %s, %s, %s)"
             log_query = sql_query % tuple(valores)  # Para fines de depuración
             print("Consulta SQL para depuración:", log_query)
             cursor.execute(sql_query, valores)
@@ -667,7 +688,6 @@ def insertar_medicion():
             cursor.close()
             conn.close()
 
-app.register_blueprint(insertar_medicion_v2_bp)
 
 @app.route('/listarTablas', methods=['GET'])
 def listar_tablas():
@@ -1101,6 +1121,7 @@ def listar_datos_estructurados_v2():
                 d.fecha,
                 d.id_sesion,
                 d.valor,
+                d.fecha_insercion,
                 CONCAT(st.modelo, ' [', v.descripcion, ' (', v.unidad, ')]') AS unidad_medida,
                 s.descripcion AS sesion_descripcion,
                 s.fecha_inicio,
@@ -1162,11 +1183,11 @@ def listar_datos_estructurados_v2():
         df = pd.DataFrame(respuesta)
 
         # Rellenar valores nulos (NaN)
-        df = df.fillna(value={"id_sesion": "Sin sesión", "sesion_descripcion": "", "fecha_inicio": "", "ubicacion": "", "dispositivo_descripcion": ""})
+        df = df.fillna(value={"id_sesion": "Sin sesión", "fecha_insercion": "", "sesion_descripcion": "", "fecha_inicio": "", "ubicacion": "", "dispositivo_descripcion": ""})
 
         # Crear la tabla pivotada
         df_pivoted = df.pivot_table(
-            index=["fecha", "id_sesion", "sesion_descripcion", "fecha_inicio", "ubicacion", "id_proyecto", "codigo_interno", "dispositivo_descripcion"],
+            index=["fecha", "fecha_insercion", "id_sesion", "sesion_descripcion", "fecha_inicio", "ubicacion", "id_proyecto", "codigo_interno", "dispositivo_descripcion"],
             columns="unidad_medida",
             values="valor",
             aggfunc=list
@@ -2405,6 +2426,11 @@ def f_numero_variables_por_proyecto(id_proyecto):
         if 'conn' in locals() and conn.is_connected():
             cursor.close()
             conn.close()
+
+
+# Alertas
+
+
 
 
 if __name__ == "__main__":
