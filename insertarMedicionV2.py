@@ -289,10 +289,21 @@ def insertar_medicion_v2():
     
     measurements = []
 
+    
+    # Fecha de inserción (servidor)  
+    server_timestamp = datetime.now().timestamp()
+    insertion_timestamps = [str(server_timestamp)] * len(sensor_ids)
+
+
     for i in range(len(sensor_ids)):
         timestamp_float = float(timestamps[i])
         datetime_obj = datetime.fromtimestamp(timestamp_float)
         formatted_datetime = datetime_obj.strftime('%Y-%m-%d %H:%M:%S')
+
+        # fechas insercion
+        insertion_timestamp_float = float(insertion_timestamps[i])
+        insertion_datetime_obj = datetime.fromtimestamp(insertion_timestamp_float)
+        formatted_insertion_datetime = insertion_datetime_obj.strftime('%Y-%m-%d %H:%M:%S')
 
         # Convertir valores vacíos a None para insertarlos como NULL en la base de datos
         valor = values[i] if values[i] and values[i].strip() else None
@@ -302,7 +313,9 @@ def insertar_medicion_v2():
             "sesionId": sesiones_ids[i],
             "sensorId": sensor_ids[i],
             "variableId": variable_ids[i],
-            "value": valor
+            "value": valor,
+            "insertionTimestamp": formatted_insertion_datetime
+
         })
 
     try:
