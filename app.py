@@ -1175,9 +1175,6 @@ def listar_datos_estructurados_v2():
           respuesta.append(datos_dict)
 
 
-        # Función personalizada para concatenar los id_dato
-        def concatenate_id_dato(series):
-            return ', '.join(map(str, series))
 
         # Crear el DataFrame
         df = pd.DataFrame(respuesta)
@@ -1193,11 +1190,16 @@ def listar_datos_estructurados_v2():
             aggfunc=list
         ).reset_index()
 
-        # Ahora agregar la columna de concatenación de id_dato (unión de los valores de 'id_dato' por fila)
-        df_pivoted["id_dato_concatenado"] = df_pivoted.apply(
-            lambda row: concatenate_id_dato(df.loc[df["fecha"] == row["fecha"], "id_dato"]),
-            axis=1
+        # Crear una columna vectorizada con los id_dato concatenados por fecha
+        id_concat = (
+            df.groupby("fecha")["id_dato"]
+              .apply(lambda s: ', '.join(map(str, s)))
+              .reset_index()
+              .rename(columns={"id_dato": "id_dato_concatenado"})
         )
+
+        # Unir la columna al DataFrame pivotado
+        df_pivoted = df_pivoted.merge(id_concat, on="fecha", how="left")
 
         # Convertir las listas a cadenas separadas por comas
         df_pivoted = df_pivoted.applymap(lambda x: ', '.join(map(str, x)) if isinstance(x, list) else str(x) if x is not None else "")
