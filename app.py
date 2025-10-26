@@ -1202,7 +1202,7 @@ def listar_datos_estructurados_v2():
         df_pivoted = df_pivoted.merge(id_concat, on="fecha", how="left")
 
         # Convertir las listas a cadenas separadas por comas
-        df_pivoted = df_pivoted.applymap(lambda x: ', '.join(map(str, x)) if isinstance(x, list) else str(x) if x is not None else "")
+        df_pivoted = df_pivoted.map(lambda x: ', '.join(map(str, x)) if isinstance(x, list) else str(x) if x is not None else "")
 
         # Calcular total_count antes de aplicar limit y offset (independendiente del limit)
         try:
