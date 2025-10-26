@@ -67,8 +67,27 @@ app.config['SWAGGER'] = {
     ]
 }
 
-CORS(app, origins=["*", "http://localhost:5173"])
+CORS(app,
+     resources={r"/*": {"origins": ["https://sensores.cmasccp.cl", "http://localhost:5173"]}},
+     supports_credentials=True,
+     allow_headers=["Content-Type", "Authorization"],
+     expose_headers=["Content-Type"],
+     methods=["GET","POST","PUT","DELETE","OPTIONS"])
 swagger = Swagger(app)
+
+@app.after_request
+def add_cors_headers(response):
+    """Asegura cabeceras CORS para orígenes permitidos."""
+    origin = request.headers.get('Origin')
+    allowed = ["https://sensores.cmasccp.cl", "http://localhost:5173"]
+    if origin in allowed:
+        response.headers['Access-Control-Allow-Origin'] = origin
+        response.headers['Access-Control-Allow-Credentials'] = 'true'
+    # Cabeceras generales que ayudan en preflight
+    response.headers.setdefault('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+    response.headers.setdefault('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS')
+    return response
+
 
 ALLOWED_TABLES_PROP = [
 {'displayName':'Datos','dataName':'datos'},
@@ -1273,34 +1292,6 @@ def listar_datos_estructurados_v2():
             conn.close()
 
 
-## TODO: IDEA para tener un mapeo con las relaciones por proyecto
-@app.route("/esquemaDispositivoPorProyecto", methods=['GET'])
-def get_deviceSchema_by_project():
-  """
-  Obtiene el esquema de una tabla específica en la base de datos.
-    ---
-    tags:
-      - Tablas
-    parameters:
-      - name: tabla
-        in: query
-        type: string
-        required: true
-        description: Nombre de la tabla para la cual se solicita el esquema.
-  """
-
-  args = request.args
-  limit = int(args.get('limite', 100))
-  offset = int(args.get('offset', 0))
-  id_proyecto = args.get('id_proyecto')  # Puede ser '1,2,3' o None
-  print(id_proyecto)
-
-  
-
-  return jsonify({}), 200
-
-
-
 @app.route('/listarDatosEstructurados', methods=['GET'])
 def listar_datos_estructurados():
     """
@@ -1555,7 +1546,6 @@ def listar_datos_estructurados():
         if conn.is_connected():
             cursor.close()
             conn.close()
-
 
 
 @app.route('/listarSensores', methods=['GET'])
@@ -2118,6 +2108,7 @@ def agregar_imagen():
     if file and allowed_file(file.filename):
         filepath = os.path.join(UPLOAD_FOLDER, file.filename)
         file.save(filepath)
+       
         return jsonify({"message": f"Image saved at {filepath}"}), 200
     else:
         return jsonify({"error": "Invalid file type"}), 400
