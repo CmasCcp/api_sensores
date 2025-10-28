@@ -1548,6 +1548,251 @@ def listar_datos_estructurados():
             conn.close()
 
 
+@app.route('/listarUltimasMediciones', methods=['GET'])
+def listar_ultimas_mediciones():
+    """
+    Lista las últimas mediciones estructuradas de la tabla "datos" con filtros opcionales.
+    ---
+    tags:
+      - Tablas
+    parameters:
+      - name: limite
+        in: query
+        type: integer
+        required: false
+        description: Número máximo de registros a retornar. Sin límite si no se especifica.
+      - name: offset
+        in: query
+        type: integer
+        required: false
+        description: Desplazamiento inicial para la consulta. Predeterminado a 0.
+      - name: formato
+        in: query
+        type: string
+        required: false
+        description: Formato de salida 'json' o 'csv'. Predeterminado a 'json'.
+      - name: fecha_inicio
+        in: query
+        type: string
+        format: date
+        required: false
+        description: Fecha de inicio para filtrar los datos en formato "YYYY-MM-DD".
+      - name: fecha_fin
+        in: query
+        type: string
+        format: date
+        required: false
+        description: Fecha de fin para filtrar los datos en formato "YYYY-MM-DD".
+      - name: filtros
+        in: query
+        type: string
+        required: false
+        description: Filtros opcionales para columnas específicas en la forma 'columna=valor1,valor2'.
+    responses:
+      200:
+        description: Últimas mediciones obtenidas con éxito.
+        schema:
+          type: object
+          properties:
+            status:
+              type: string
+              example: success
+            data:
+              type: object
+              properties:
+                tableData:
+                  type: array
+                  items:
+                    type: object
+                    example: { "fecha": "2024-01-01", "id_sesion": 123, "valor": 45.6, "unidad_medida": "Temperatura (°C)" }
+                tabla:
+                  type: string
+                  example: datos
+      400:
+        description: No se encontraron registros para los filtros solicitados o error en el formato.
+        schema:
+          type: object
+          properties:
+            status:
+              type: string
+              example: fail
+            error:
+              type: string
+              example: No hay registros para los filtros solicitados
+      403:
+        description: La tabla solicitada no está permitida.
+        schema:
+          type: object
+          properties:
+            status:
+              type: string
+              example: fail
+            error:
+              type: string
+              example: Tabla no permitida
+      500:
+        description: Error interno en la base de datos o error inesperado.
+        schema:
+          type: object
+          properties:
+            status:
+              type: string
+              example: fail
+            error:
+              type: string
+              example: Error al conectarse a la base de datos <detalle del error>
+    """
+
+    args = request.args
+    tabla = "datos"
+    limit = int(args.get('limite', 0))
+    offset = int(args.get('offset', 0))
+    formato = args.get('formato', 'json')
+
+    fecha_inicio = args.get('fecha_inicio')
+    fecha_fin = args.get('fecha_fin')
+
+    args_dict = request.args.to_dict()
+    not_primary_keys = ['tabla', 'limite', 'offset', 'formato', 'fecha_inicio', 'fecha_fin']
+
+    # Filtrar los argumentos relevantes
+    filtered_args = {key: value.split(',') for key, value in args_dict.items() if key not in not_primary_keys}
+
+    where_clauses = []
+    params = []
+
+    # Rango de fechas
+    if fecha_inicio:
+        where_clauses.append("(d.fecha >= %s)")
+        params.append(fecha_inicio)
+    
+    if fecha_fin:
+        where_clauses.append("(d.fecha <= %s)")
+        params.append(fecha_fin)
+
+    for key, values in filtered_args.items():
+        or_conditions = " OR ".join([f"{key}=%s" for _ in values])
+        where_clauses.append(f"({or_conditions})")
+        params.extend(values)
+
+    where_clause = ' AND '.join(where_clauses)
+    where_clause = f"WHERE {where_clause}" if where_clause else ""
+
+    if tabla not in ALLOWED_TABLES:
+        return jsonify({'status': 'fail', 'error': 'Tabla no permitida'}), 403
+
+    try:
+        conn = mysql.connector.connect(**config)
+        cursor = conn.cursor()
+
+        sql_query = f"""
+            SELECT
+                d.fecha,
+                d.id_sesion,
+                d.valor,
+                CONCAT(st.modelo, ' [', v.descripcion, ' (', v.unidad, ')]') AS unidad_medida,
+                s.descripcion AS sesion_descripcion,
+                s.fecha_inicio,
+                s.ubicacion,
+                disp.id_proyecto,
+                disp.codigo_interno,
+                disp.descripcion AS dispositivo_descripcion
+            FROM
+                sensores_dev.datos AS d
+            LEFT JOIN
+                sensores_dev.variables AS v ON d.id_variable = v.id_variable
+            LEFT JOIN
+                sensores_dev.sesiones AS s ON d.id_sesion = s.id_sesion
+            LEFT JOIN
+                sensores_dev.sensores AS sens ON d.id_sensor = sens.id_sensor
+            LEFT JOIN
+                sensores_dev.sensores_tipo AS st ON sens.id_sensor_tipo = st.id_sensor_tipo
+            LEFT JOIN
+                sensores_dev.sensores_en_dispositivo AS sed ON sens.id_sensor = sed.id_sensor
+            LEFT JOIN
+                sensores_dev.dispositivos AS disp ON sed.id_dispositivo = disp.id_dispositivo
+            {where_clause}
+            ORDER BY d.fecha DESC
+        """
+
+        cursor.execute(sql_query, params)
+        filas = cursor.fetchall()
+        if len(filas) == 0:
+            mensaje_error = f"No hay registros para los filtros solicitados"
+            return jsonify({'status': 'fail', 'error': mensaje_error}), 400
+        
+        # Convertir resultados en DataFrame
+        respuesta = []
+        for fila in filas:
+            datos_dict = {key: value for key, value in zip(cursor.column_names, fila)}
+            for key, value in datos_dict.items():
+                if isinstance(value, decimal.Decimal):
+                    datos_dict[key] = float(value)
+                elif isinstance(value, (datetime, date)):
+                    datos_dict[key] = value.isoformat()
+            respuesta.append(datos_dict)
+
+        print("respuesta", respuesta)
+        
+        df = pd.DataFrame(respuesta)
+        df = df.fillna(value={"id_sesion": "Sin sesión", "sesion_descripcion": "", "fecha_inicio": "", "ubicacion": "", "dispositivo_descripcion":""})
+
+        df_pivoted = df.pivot_table(
+            index=["fecha", "id_sesion", "sesion_descripcion", "fecha_inicio", "ubicacion", "id_proyecto", "codigo_interno", "dispositivo_descripcion"],
+            columns="unidad_medida",
+            values="valor",
+            aggfunc=list
+        ).reset_index()
+        
+        # Convertir las listas a cadenas separadas por comas
+        df_pivoted = df_pivoted.map(lambda x: ', '.join(map(str, x)) if isinstance(x, list) else str(x) if x is not None else "")
+
+        # Aplicar limit y offset al DataFrame pivotado
+        if limit > 0:
+            df_pivoted = df_pivoted.iloc[offset:offset + limit]
+
+        if formato == 'json':
+            json_response = df_pivoted.to_dict(orient="records")
+            json_respuesta = json.dumps({
+                'status': 'success',
+                'data': {
+                    'tableData': json_response,
+                    'tabla': tabla
+                }
+            }, ensure_ascii=False)
+            return json_respuesta, 200, {'Content-Type': 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*'}
+        elif formato == 'csv':
+            return Response(
+                stream_with_context(build_csv(df_pivoted)),
+                mimetype="text/csv",
+                headers={"Content-Disposition": "attachment;filename=output.csv"}
+            )
+        elif formato == 'xlsx':
+            return Response(
+                stream_with_context(build_excel(df_pivoted)),
+                mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                headers={"Content-Disposition": "attachment;filename=output.xlsx"}
+            )
+        else:
+            mensaje_error = f"Formato '{formato}' no soportado. Use 'json' o 'csv'."
+            return jsonify({'status': 'fail', 'error': mensaje_error}), 400
+
+    except mysql.connector.Error as e:
+        mensaje_error = f"Error al conectarse a la base de datos {e}"
+        print(mensaje_error)
+        return jsonify({'status': 'fail', 'error': mensaje_error}), 500
+
+    except Exception as e:
+        mensaje_error = f"Error desconocido: {e}"
+        print(mensaje_error)
+        return jsonify({'status': 'fail', 'error': mensaje_error}), 500
+
+    finally:
+        if conn.is_connected():
+            cursor.close()
+            conn.close()
+
+
 @app.route('/listarSensores', methods=['GET'])
 def listar_sensores():
     args = request.args
