@@ -16,6 +16,7 @@ from openpyxl.styles import PatternFill
 
 from insertarMedicionV2 import insertar_medicion_bp as insertar_medicion_v2_bp
 from alertas import alertas_bp
+from files import files_bp
 # from flask_socketio import SocketIO, emit
 
 
@@ -183,6 +184,7 @@ print(config)
 
 app.register_blueprint(insertar_medicion_v2_bp)
 app.register_blueprint(alertas_bp)
+app.register_blueprint(files_bp)
 
 
 @app.route('/endovenosaDummy', methods=['GET'])
