@@ -1035,6 +1035,583 @@ def _validate_rate_of_change_for_alert(alert):
         except Exception:
             pass
 
+def _validate_stuck_value_for_alert(alert):
+    """
+    Valida si hay valores congelados/repetidos durante una ventana de muestras
+    
+    Configuración esperada en alert["config"]:
+    {
+        "ventana_muestras": 10,     # Número de muestras consecutivas a analizar
+        "max_unicos": 1             # Máximo número de valores únicos permitidos en la ventana
+    }
+    
+    Args:
+        alert: Objeto de alerta con la configuración
+    
+    Returns:
+        dict: Resultado de la validación
+    """
+    try:
+        config = _get_db_config()
+        conn = mysql.connector.connect(**config)
+        cursor = conn.cursor()
+        
+        project_id = alert["projectId"]
+        parameter = alert["parameter"]
+        
+        # Obtener configuración de valor congelado
+        alert_config = alert.get("config", {})
+        ventana_muestras = alert_config.get("ventana_muestras", 10)
+        max_unicos = alert_config.get("max_unicos", 1)
+        
+        # Validar configuración
+        if ventana_muestras < 2:
+            return {
+                "status": "error",
+                "message": "La ventana de muestras debe ser al menos 2"
+            }
+        
+        if max_unicos < 1:
+            return {
+                "status": "error",
+                "message": "El número máximo de valores únicos debe ser al menos 1"
+            }
+
+        validation_time = datetime.now()
+        
+        # Determinar dispositivos a validar
+        if alert.get("applyToAllDevices", True):
+            device_query = """
+                SELECT id_dispositivo, codigo_interno 
+                FROM sensores_dev.dispositivos 
+                WHERE id_proyecto = %s
+            """
+            device_params = [project_id]
+        else:
+            target_devices = alert.get("targetDevices", [])
+            if not target_devices:
+                return {
+                    "status": "error",
+                    "message": "No se especificaron dispositivos objetivo"
+                }
+            
+            device_placeholders = ','.join(['%s'] * len(target_devices))
+            device_query = f"""
+                SELECT id_dispositivo, codigo_interno 
+                FROM sensores_dev.dispositivos 
+                WHERE id_proyecto = %s AND codigo_interno IN ({device_placeholders})
+            """
+            device_params = [project_id] + list(target_devices)
+        
+        cursor.execute(device_query, device_params)
+        project_devices = cursor.fetchall()
+        
+        if not project_devices:
+            return {
+                "status": "error",
+                "message": "No se encontraron dispositivos para validar"
+            }
+        
+        # Buscar valores congelados en las últimas 24 horas
+        end_time = validation_time
+        start_time = end_time - timedelta(hours=24)
+        
+        devices_with_issues = []
+        
+        for device_id, codigo_interno in project_devices:
+            # Obtener las últimas mediciones ordenadas por fecha para análisis de ventana deslizante
+            values_query = """
+                SELECT d.id_dato, d.fecha, d.valor
+                FROM sensores_dev.datos AS d
+                LEFT JOIN sensores_dev.variables AS v ON d.id_variable = v.id_variable
+                LEFT JOIN sensores_dev.sensores AS sens ON d.id_sensor = sens.id_sensor
+                LEFT JOIN sensores_dev.sensores_tipo AS st ON sens.id_sensor_tipo = st.id_sensor_tipo
+                LEFT JOIN sensores_dev.sensores_en_dispositivo AS sed ON sens.id_sensor = sed.id_sensor
+                LEFT JOIN sensores_dev.dispositivos AS disp ON sed.id_dispositivo = disp.id_dispositivo
+                WHERE disp.id_dispositivo = %s
+                AND CONCAT(st.modelo, ' [', v.descripcion, ' (', v.unidad, ')]') = %s
+                AND d.fecha >= %s AND d.fecha <= %s
+                AND d.valor IS NOT NULL
+                ORDER BY d.fecha ASC
+            """
+            
+            cursor.execute(values_query, [device_id, parameter, start_time, end_time])
+            all_values = cursor.fetchall()
+            
+            if len(all_values) < ventana_muestras:
+                # No hay suficientes datos para analizar
+                continue
+            
+            stuck_periods = []
+            
+            # Análisis de ventana deslizante
+            for i in range(len(all_values) - ventana_muestras + 1):
+                # Extraer ventana de valores
+                window_data = all_values[i:i + ventana_muestras]
+                
+                # Extraer solo los valores (índice 2 es el valor)
+                window_values = [row[2] for row in window_data]
+                
+                # Contar valores únicos en la ventana
+                unique_values = set()
+                for val in window_values:
+                    # Para valores numéricos, convertir a float para comparación
+                    try:
+                        unique_values.add(float(val))
+                    except (ValueError, TypeError):
+                        # Para valores no numéricos (boolean, string), agregar tal como está
+                        unique_values.add(str(val).lower())
+                
+                # Verificar si excede el máximo de valores únicos permitidos
+                if len(unique_values) <= max_unicos:
+                    # Encontrado período de valor congelado
+                    period_start = window_data[0][1]  # fecha del primer elemento
+                    period_end = window_data[-1][1]   # fecha del último elemento
+                    stuck_value = list(unique_values)[0] if len(unique_values) == 1 else "múltiples"
+                    
+                    stuck_periods.append({
+                        "periodo_inicio": period_start.isoformat(),
+                        "periodo_fin": period_end.isoformat(),
+                        "valor_congelado": stuck_value,
+                        "muestras_analizadas": len(window_data),
+                        "valores_unicos_encontrados": len(unique_values),
+                        "ventana_datos": [
+                            {
+                                "fecha": row[1].isoformat(),
+                                "valor": row[2],
+                                "id_dato": row[0]
+                            } for row in window_data
+                        ]
+                    })
+            
+            # Consolidar períodos superpuestos para evitar duplicados
+            if stuck_periods:
+                consolidated_periods = []
+                current_period = stuck_periods[0]
+                
+                for next_period in stuck_periods[1:]:
+                    # Si los períodos se superponen o son consecutivos, consolidar
+                    if (current_period["valor_congelado"] == next_period["valor_congelado"] and
+                        abs((datetime.fromisoformat(next_period["periodo_inicio"]) - 
+                             datetime.fromisoformat(current_period["periodo_fin"])).total_seconds()) < 3600):
+                        # Extender el período actual
+                        current_period["periodo_fin"] = next_period["periodo_fin"]
+                        current_period["muestras_analizadas"] += next_period["muestras_analizadas"]
+                    else:
+                        # Agregar período actual y comenzar uno nuevo
+                        consolidated_periods.append(current_period)
+                        current_period = next_period
+                
+                # Agregar el último período
+                consolidated_periods.append(current_period)
+                
+                devices_with_issues.append({
+                    "dispositivo_id": device_id,
+                    "codigo_interno": codigo_interno,
+                    "parametro": parameter,
+                    "stuck_periods_count": len(consolidated_periods),
+                    "total_measurements_analyzed": len(all_values),
+                    "stuck_periods": consolidated_periods[:5]  # Limitar a los primeros 5 para el reporte
+                })
+        
+        # Enviar correo si hay dispositivos con problemas
+        email_results = []
+        if devices_with_issues:
+            # Obtener destinatarios desde la configuración de la alerta
+            alert_emails = alert.get("email", [])
+            if isinstance(alert_emails, str):
+                alert_emails = [alert_emails]
+            
+            for device_issue in devices_with_issues:
+                email_subject = f"ALERTA: Valor congelado detectado - {device_issue['codigo_interno']}"
+                email_body = f"""
+ALERTA DE VALOR CONGELADO
+
+Dispositivo: {device_issue['codigo_interno']} (ID: {device_issue['dispositivo_id']})
+Parámetro: {device_issue['parametro']}
+Proyecto: {project_id}
+
+DETALLES:
+- Períodos de valores congelados detectados: {device_issue['stuck_periods_count']}
+- Total de mediciones analizadas: {device_issue['total_measurements_analyzed']}
+- Configuración de alerta:
+  * Ventana de muestras: {ventana_muestras}
+  * Máximo valores únicos permitidos: {max_unicos}
+
+PERÍODOS DETECTADOS:
+"""
+                
+                for i, period in enumerate(device_issue['stuck_periods'][:3], 1):
+                    email_body += f"""
+Período {i}:
+- Inicio: {period['periodo_inicio']}
+- Fin: {period['periodo_fin']}
+- Valor congelado: {period['valor_congelado']}
+- Valores únicos encontrados: {period['valores_unicos_encontrados']}
+"""
+                
+                email_body += f"\nFecha de validación: {validation_time.isoformat()}"
+                
+                # Enviar correo
+                email_result = send_email_alert(
+                    TITULO=email_subject,
+                    PROYECTO_ID=project_id,
+                    CODIGO_INTERNO=device_issue['codigo_interno'],
+                    FECHA=validation_time.isoformat(),
+                    receivers=alert_emails
+                )
+                
+                email_results.append({
+                    "dispositivo": device_issue['codigo_interno'],
+                    "email_result": email_result
+                })
+        
+        # Actualizar fecha de última validación en la alerta
+        _update_alert_last_validation(alert["id"], validation_time)
+        
+        # Calcular estadísticas de correos enviados
+        total_emails_sent = sum(result["email_result"].get("emails_sent", 0) for result in email_results)
+        total_emails_failed = sum(result["email_result"].get("emails_failed", 0) for result in email_results)
+        
+        return {
+            "status": "success",
+            "alert_id": alert["id"],
+            "validation_type": "stuck_value",
+            "project_id": project_id,
+            "parameter": parameter,
+            "stuck_config": {
+                "ventana_muestras": ventana_muestras,
+                "max_unicos": max_unicos
+            },
+            "validation_time": validation_time.isoformat(),
+            "period_checked": f"{start_time.isoformat()} a {end_time.isoformat()}",
+            "total_devices_checked": len(project_devices),
+            "devices_with_issues": len(devices_with_issues),
+            "total_stuck_periods": sum(device["stuck_periods_count"] for device in devices_with_issues),
+            "issues_found": devices_with_issues,
+            "email_notifications": {
+                "total_emails_sent": total_emails_sent,
+                "total_emails_failed": total_emails_failed,
+                "devices_notified": len(email_results),
+                "email_details": email_results
+            }
+        }
+        
+    except mysql.connector.Error as e:
+        return {
+            "status": "error",
+            "message": f"Error de base de datos: {str(e)}"
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Error inesperado: {str(e)}"
+        }
+    finally:
+        try:
+            if 'cursor' in locals():
+                cursor.close()
+            if 'conn' in locals() and conn.is_connected():
+                conn.close()
+        except Exception:
+            pass
+
+def _validate_cross_parameter_rule_for_alert(alert):
+    """
+    Valida relaciones lógicas entre dos parámetros del mismo dispositivo
+    
+    Configuración esperada en alert["config"]:
+    {
+        "izq": "parametro_izquierdo",     # Nombre del parámetro izquierdo
+        "relacion": "<=",                 # Operador de comparación (<, >, <=, >=, =, !=)
+        "der": "parametro_derecho"        # Nombre del parámetro derecho
+    }
+    
+    Args:
+        alert: Objeto de alerta con la configuración
+    
+    Returns:
+        dict: Resultado de la validación
+    """
+    try:
+        config = _get_db_config()
+        conn = mysql.connector.connect(**config)
+        cursor = conn.cursor()
+        
+        project_id = alert["projectId"]
+        
+        # Obtener configuración de la regla entre parámetros
+        alert_config = alert.get("config", {})
+        parametro_izq = alert_config.get("izq")
+        relacion = alert_config.get("relacion")
+        parametro_der = alert_config.get("der")
+        
+        # Validar configuración
+        if not parametro_izq or not parametro_der:
+            return {
+                "status": "error",
+                "message": "Se requieren los parámetros 'izq' y 'der' en la configuración"
+            }
+        
+        if not relacion:
+            return {
+                "status": "error",
+                "message": "Se requiere especificar la 'relacion' en la configuración"
+            }
+        
+        # Validar operador
+        operadores_validos = ["<", ">", "<=", ">=", "=", "!="]
+        if relacion not in operadores_validos:
+            return {
+                "status": "error",
+                "message": f"Operador '{relacion}' no válido. Use uno de: {operadores_validos}"
+            }
+        
+        if parametro_izq == parametro_der:
+            return {
+                "status": "error",
+                "message": "Los parámetros izquierdo y derecho no pueden ser iguales"
+            }
+
+        validation_time = datetime.now()
+        
+        # Determinar dispositivos a validar
+        if alert.get("applyToAllDevices", True):
+            device_query = """
+                SELECT id_dispositivo, codigo_interno 
+                FROM sensores_dev.dispositivos 
+                WHERE id_proyecto = %s
+            """
+            device_params = [project_id]
+        else:
+            target_devices = alert.get("targetDevices", [])
+            if not target_devices:
+                return {
+                    "status": "error",
+                    "message": "No se especificaron dispositivos objetivo"
+                }
+            
+            device_placeholders = ','.join(['%s'] * len(target_devices))
+            device_query = f"""
+                SELECT id_dispositivo, codigo_interno 
+                FROM sensores_dev.dispositivos 
+                WHERE id_proyecto = %s AND codigo_interno IN ({device_placeholders})
+            """
+            device_params = [project_id] + list(target_devices)
+        
+        cursor.execute(device_query, device_params)
+        project_devices = cursor.fetchall()
+        
+        if not project_devices:
+            return {
+                "status": "error",
+                "message": "No se encontraron dispositivos para validar"
+            }
+        
+        # Buscar violaciones de la regla en las últimas 24 horas
+        end_time = validation_time
+        start_time = end_time - timedelta(hours=24)
+        
+        devices_with_issues = []
+        
+        for device_id, codigo_interno in project_devices:
+            # Consulta para obtener pares de valores de ambos parámetros en la misma fecha/hora
+            cross_param_query = """
+                SELECT 
+                    d1.fecha,
+                    d1.valor as valor_izq,
+                    d2.valor as valor_der,
+                    d1.id_dato as id_dato_izq,
+                    d2.id_dato as id_dato_der
+                FROM sensores_dev.datos AS d1
+                INNER JOIN sensores_dev.datos AS d2 ON d1.fecha = d2.fecha
+                LEFT JOIN sensores_dev.variables AS v1 ON d1.id_variable = v1.id_variable
+                LEFT JOIN sensores_dev.sensores AS sens1 ON d1.id_sensor = sens1.id_sensor
+                LEFT JOIN sensores_dev.sensores_tipo AS st1 ON sens1.id_sensor_tipo = st1.id_sensor_tipo
+                LEFT JOIN sensores_dev.sensores_en_dispositivo AS sed1 ON sens1.id_sensor = sed1.id_sensor
+                LEFT JOIN sensores_dev.dispositivos AS disp1 ON sed1.id_dispositivo = disp1.id_dispositivo
+                LEFT JOIN sensores_dev.variables AS v2 ON d2.id_variable = v2.id_variable
+                LEFT JOIN sensores_dev.sensores AS sens2 ON d2.id_sensor = sens2.id_sensor
+                LEFT JOIN sensores_dev.sensores_tipo AS st2 ON sens2.id_sensor_tipo = st2.id_sensor_tipo
+                LEFT JOIN sensores_dev.sensores_en_dispositivo AS sed2 ON sens2.id_sensor = sed2.id_sensor
+                LEFT JOIN sensores_dev.dispositivos AS disp2 ON sed2.id_dispositivo = disp2.id_dispositivo
+                WHERE disp1.id_dispositivo = %s
+                AND disp2.id_dispositivo = %s
+                AND CONCAT(st1.modelo, ' [', v1.descripcion, ' (', v1.unidad, ')]') = %s
+                AND CONCAT(st2.modelo, ' [', v2.descripcion, ' (', v2.unidad, ')]') = %s
+                AND d1.fecha >= %s AND d1.fecha <= %s
+                AND d1.valor IS NOT NULL AND d2.valor IS NOT NULL
+                AND d1.valor != '' AND d2.valor != ''
+                ORDER BY d1.fecha DESC
+            """
+            
+            cursor.execute(cross_param_query, [
+                device_id, device_id, 
+                parametro_izq, parametro_der,
+                start_time, end_time
+            ])
+            param_pairs = cursor.fetchall()
+            
+            if not param_pairs:
+                # No hay datos suficientes para comparar ambos parámetros
+                continue
+            
+            rule_violations = []
+            
+            # Evaluar cada par de valores según la relación especificada
+            for fecha, valor_izq, valor_der, id_dato_izq, id_dato_der in param_pairs:
+                try:
+                    # Convertir valores a float para comparación numérica
+                    val_izq = float(valor_izq)
+                    val_der = float(valor_der)
+                    
+                    # Evaluar la relación
+                    relation_result = False
+                    if relacion == "<":
+                        relation_result = val_izq < val_der
+                    elif relacion == ">":
+                        relation_result = val_izq > val_der
+                    elif relacion == "<=":
+                        relation_result = val_izq <= val_der
+                    elif relacion == ">=":
+                        relation_result = val_izq >= val_der
+                    elif relacion == "=":
+                        relation_result = abs(val_izq - val_der) < 0.0001  # Tolerancia para flotantes
+                    elif relacion == "!=":
+                        relation_result = abs(val_izq - val_der) >= 0.0001
+                    
+                    # Si la relación NO se cumple, es una violación
+                    if not relation_result:
+                        rule_violations.append({
+                            "fecha": fecha.isoformat(),
+                            "valor_izquierdo": val_izq,
+                            "valor_derecho": val_der,
+                            "relacion_esperada": f"{parametro_izq} {relacion} {parametro_der}",
+                            "relacion_actual": f"{val_izq} {relacion} {val_der}",
+                            "cumple_relacion": False,
+                            "id_dato_izq": id_dato_izq,
+                            "id_dato_der": id_dato_der
+                        })
+                
+                except (ValueError, TypeError):
+                    # Error al convertir a float, saltar esta comparación
+                    continue
+            
+            if rule_violations:
+                devices_with_issues.append({
+                    "dispositivo_id": device_id,
+                    "codigo_interno": codigo_interno,
+                    "parametro_izquierdo": parametro_izq,
+                    "parametro_derecho": parametro_der,
+                    "relacion": relacion,
+                    "rule_violations_count": len(rule_violations),
+                    "total_comparisons": len(param_pairs),
+                    "rule_violations": rule_violations[:10]  # Limitar a primeras 10 violaciones
+                })
+        
+        # Enviar correo si hay dispositivos con problemas
+        email_results = []
+        if devices_with_issues:
+            # Obtener destinatarios desde la configuración de la alerta
+            alert_emails = alert.get("email", [])
+            if isinstance(alert_emails, str):
+                alert_emails = [alert_emails]
+            
+            for device_issue in devices_with_issues:
+                email_subject = f"ALERTA: Violación de regla entre parámetros - {device_issue['codigo_interno']}"
+                email_body = f"""
+ALERTA DE REGLA ENTRE PARÁMETROS
+
+Dispositivo: {device_issue['codigo_interno']} (ID: {device_issue['dispositivo_id']})
+Proyecto: {project_id}
+
+REGLA VIOLADA:
+{device_issue['parametro_izquierdo']} {device_issue['relacion']} {device_issue['parametro_derecho']}
+
+ESTADÍSTICAS:
+- Violaciones detectadas: {device_issue['rule_violations_count']}
+- Comparaciones totales realizadas: {device_issue['total_comparisons']}
+- Porcentaje de violaciones: {(device_issue['rule_violations_count'] / device_issue['total_comparisons'] * 100):.2f}%
+
+PRIMERAS VIOLACIONES DETECTADAS:
+"""
+                
+                for i, violation in enumerate(device_issue['rule_violations'][:5], 1):
+                    email_body += f"""
+Violación {i}:
+- Fecha: {violation['fecha']}
+- {device_issue['parametro_izquierdo']}: {violation['valor_izquierdo']}
+- {device_issue['parametro_derecho']}: {violation['valor_derecho']}
+- Resultado: {violation['valor_izquierdo']} {device_issue['relacion']} {violation['valor_derecho']} = {violation['cumple_relacion']}
+"""
+                
+                email_body += f"\nFecha de validación: {validation_time.isoformat()}"
+                
+                # Enviar correo
+                email_result = send_email_alert(
+                    TITULO=email_subject,
+                    PROYECTO_ID=project_id,
+                    CODIGO_INTERNO=device_issue['codigo_interno'],
+                    FECHA=validation_time.isoformat(),
+                    receivers=alert_emails
+                )
+                
+                email_results.append({
+                    "dispositivo": device_issue['codigo_interno'],
+                    "email_result": email_result
+                })
+        
+        # Actualizar fecha de última validación en la alerta
+        _update_alert_last_validation(alert["id"], validation_time)
+        
+        # Calcular estadísticas de correos enviados
+        total_emails_sent = sum(result["email_result"].get("emails_sent", 0) for result in email_results)
+        total_emails_failed = sum(result["email_result"].get("emails_failed", 0) for result in email_results)
+        
+        return {
+            "status": "success",
+            "alert_id": alert["id"],
+            "validation_type": "cross_parameter_rule",
+            "project_id": project_id,
+            "rule_config": {
+                "parametro_izquierdo": parametro_izq,
+                "relacion": relacion,
+                "parametro_derecho": parametro_der,
+                "regla_completa": f"{parametro_izq} {relacion} {parametro_der}"
+            },
+            "validation_time": validation_time.isoformat(),
+            "period_checked": f"{start_time.isoformat()} a {end_time.isoformat()}",
+            "total_devices_checked": len(project_devices),
+            "devices_with_issues": len(devices_with_issues),
+            "total_rule_violations": sum(device["rule_violations_count"] for device in devices_with_issues),
+            "issues_found": devices_with_issues,
+            "email_notifications": {
+                "total_emails_sent": total_emails_sent,
+                "total_emails_failed": total_emails_failed,
+                "devices_notified": len(email_results),
+                "email_details": email_results
+            }
+        }
+        
+    except mysql.connector.Error as e:
+        return {
+            "status": "error",
+            "message": f"Error de base de datos: {str(e)}"
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Error inesperado: {str(e)}"
+        }
+    finally:
+        try:
+            if 'cursor' in locals():
+                cursor.close()
+            if 'conn' in locals() and conn.is_connected():
+                conn.close()
+        except Exception:
+            pass
+
 
 @alertas_bp.route("/validarAlerta", methods=["POST"])
 def validar_alerta():
@@ -1083,6 +1660,10 @@ def validar_alerta():
         result = _validate_between_range_for_alert(target_alert)
     elif validation_id == "rate_of_change":
         result = _validate_rate_of_change_for_alert(target_alert)
+    elif validation_id == "stuck_value":
+        result = _validate_stuck_value_for_alert(target_alert)
+    elif validation_id == "cross_parameter_rule":
+        result = _validate_cross_parameter_rule_for_alert(target_alert)
     else:
         return make_response(jsonify({"error": f"Tipo de validación no soportado: {validation_id}"}), 400)
     
@@ -1117,6 +1698,10 @@ def validar_todas_las_alertas():
             result = _validate_between_range_for_alert(alert)
         elif validation_id == "rate_of_change":
             result = _validate_rate_of_change_for_alert(alert)
+        elif validation_id == "stuck_value":
+            result = _validate_stuck_value_for_alert(alert)
+        elif validation_id == "cross_parameter_rule":
+            result = _validate_cross_parameter_rule_for_alert(alert)
         else:
             result = {
                 "status": "error",
@@ -1179,6 +1764,10 @@ def validar_alertas_por_proyecto():
             result = _validate_between_range_for_alert(alert)
         elif validation_id == "rate_of_change":
             result = _validate_rate_of_change_for_alert(alert)
+        elif validation_id == "stuck_value":
+            result = _validate_stuck_value_for_alert(alert)
+        elif validation_id == "cross_parameter_rule":
+            result = _validate_cross_parameter_rule_for_alert(alert)
         else:
             result = {
                 "status": "error",
