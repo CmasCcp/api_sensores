@@ -1,55 +1,21 @@
 [
   {
-    "id": "alert_1760639129253",
-    "projectId": 1,
-    "projectLabel": "1. Licitación CMPC",
+    "id": "alert_1761847367816",
+    "projectId": 12,
+    "projectLabel": "12. Línea Base Pública - Aire",
     "ruleType": "parametros",
-    "validationId": "rate_of_change",
-    "parameter": "Divisor de Voltaje [Voltaje (V)]",
+    "validationId": "stuck_value",
+    "parameter": "Sensor Placeholder [Sensor Alphasense Placeholder, RAW 1 (RAW)]",
     "config": {
-      "ventana_muestras": 1,
-      "max_delta_pct": 100
+      "ventana_muestras": 10,
+      "max_unicos": 1
     },
-    "email": [],
+    "email": [
+      "dkressing@outlook.com"
+    ],
     "applyToAllDevices": true,
     "targetDevices": [],
     "active": true,
     "ultima_validacion": "2025-10-16T15:30:27.935102"
-  },
-  {
-    "id": "alert_1761851868422",
-    "projectId": 18,
-    "projectLabel": "18. Hiri Pro",
-    "ruleType": "parametros",
-    "validationId": "range_threshold",
-    "parameter": "DS3231 [Grados celcius (°C)]",
-    "config": {
-      "operador": ">",
-      "limite": 70
-    },
-    "email": [
-      "arebolledo@udd.cl"
-    ],
-    "applyToAllDevices": true,
-    "targetDevices": [],
-    "active": true
-  },
-  {
-    "id": "alert_1762180818156",
-    "projectId": 18,
-    "projectLabel": "18. Hiri Pro",
-    "ruleType": "parametros",
-    "validationId": "range_threshold",
-    "parameter": "DS3231 [Grados celcius (°C)]",
-    "config": {
-      "operador": ">",
-      "limite": 60
-    },
-    "email": [
-      "arebolledo@udd.cl"
-    ],
-    "applyToAllDevices": true,
-    "targetDevices": [],
-    "active": true
   }
 ]

@@ -1001,6 +1001,11 @@ def listar_datos_estructurados_v2():
         type: string
         required: false
         description: Filtros opcionales para columnas específicas en la forma 'columna=valor1,valor2'.
+      - name: order_by
+        in: query
+        type: string
+        required: false
+        description: Columna por la cual ordenar los resultados. Valores válidos 'fecha', 'id_dato', 'valor', 'codigo_interno', 'timestamp_lectura', 'id_sesion', 'nombre', 'id_proyecto', 'tag'. Predeterminado a 'fecha'.
     responses:
       200:
         description: Datos estructurados obtenidos con éxito.
@@ -1070,6 +1075,7 @@ def listar_datos_estructurados_v2():
 
     offset = int(args.get('offset', 0))
     formato = args.get('formato', 'json')
+    order_by = args.get('order_by', 'fecha')  # Por defecto ordenar por fecha
 
     print(offset)
 
@@ -1077,7 +1083,7 @@ def listar_datos_estructurados_v2():
     fecha_fin = args.get('fecha_fin')
 
     args_dict = request.args.to_dict()
-    not_primary_keys = ['tabla', 'limite', 'offset', 'formato', 'fecha_inicio', 'fecha_fin']
+    not_primary_keys = ['tabla', 'limite', 'offset', 'formato', 'fecha_inicio', 'fecha_fin', 'order_by']
 
     # Filtrar los argumentos relevantes
     filtered_args = {key: value.split(',') for key, value in args_dict.items() if key not in not_primary_keys}
@@ -1165,8 +1171,26 @@ def listar_datos_estructurados_v2():
             LEFT JOIN
                 sensores_dev.dispositivos AS disp ON sed.id_dispositivo = disp.id_dispositivo
             {where_clause}
-            ORDER BY d.fecha DESC
         """
+
+        # Validar y agregar ORDER BY de forma segura
+        valid_order_columns = {
+            'fecha': 'd.fecha',
+            'fecha_insercion': 'd.fecha_insercion',
+            'id_dato': 'd.id_dato',
+            'valor': 'd.valor',
+            'codigo_interno': 'disp.codigo_interno',
+            'id_sesion': 'd.id_sesion',
+            'id_proyecto': 'disp.id_proyecto'
+        }
+        
+        safe_order_column = valid_order_columns.get(order_by.lower(), 'd.fecha')
+        
+        # Manejar valores NULL/vacíos para que aparezcan al final en DESC
+        if order_by.lower() == 'fecha_insercion':
+            sql_query += f" ORDER BY {safe_order_column} IS NULL, {safe_order_column} DESC"
+        else:
+            sql_query += f" ORDER BY {safe_order_column} DESC"
 
         params_sql = params.copy()
         if limit is not None:
@@ -1175,7 +1199,6 @@ def listar_datos_estructurados_v2():
           params_sql.extend([limit_adaptado, offset_adaptado])
 
         cursor.execute(sql_query, params_sql)
-        print("Consulta SQL:", sql_query, params_sql)
         filas = cursor.fetchall()
         if len(filas) == 0:
             mensaje_error = f"No hay registros para los filtros solicitados"
@@ -1245,7 +1268,30 @@ def listar_datos_estructurados_v2():
         # Aplicar limit y offset al DataFrame pivotado
         # if limit > 0:
         #     df_pivoted = df_pivoted.iloc[offset:offset + limit]
-        df_pivoted = df_pivoted.sort_values(by="fecha", ascending=False)
+        
+        # Mapear columnas válidas para el DataFrame pivotado
+        valid_pivot_columns = {
+            'fecha': 'fecha',
+            'fecha_insercion': 'fecha_insercion',
+            'id_sesion': 'id_sesion',
+            'codigo_interno': 'codigo_interno',
+            'id_proyecto': 'id_proyecto'
+        }
+        
+        # Aplicar ORDER BY al DataFrame pivotado
+        pivot_order_column = valid_pivot_columns.get(order_by.lower(), 'fecha')
+        if pivot_order_column in df_pivoted.columns:
+            # Manejar fecha_insercion especialmente para valores vacíos
+            if order_by.lower() == 'fecha_insercion':
+                # Convertir cadenas vacías a NaT para ordenamiento correcto
+                df_pivoted['fecha_insercion_sort'] = pd.to_datetime(df_pivoted['fecha_insercion'], errors='coerce')
+                df_pivoted = df_pivoted.sort_values(by='fecha_insercion_sort', ascending=False, na_position='last')
+                df_pivoted = df_pivoted.drop('fecha_insercion_sort', axis=1)
+            else:
+                df_pivoted = df_pivoted.sort_values(by=pivot_order_column, ascending=False)
+        else:
+            # Fallback a fecha si la columna no existe
+            df_pivoted = df_pivoted.sort_values(by="fecha", ascending=False)
 
         # Formato de respuesta
         if formato == 'json':
