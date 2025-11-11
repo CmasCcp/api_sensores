@@ -1636,6 +1636,11 @@ def listar_ultimas_mediciones():
         type: string
         required: false
         description: Filtros opcionales para columnas específicas en la forma 'columna=valor1,valor2'.
+      - name: order_by
+        in: query
+        type: string
+        required: false
+        description: Campo por el cual ordenar los resultados (fecha, fecha_insercion, id_sesion, codigo_interno, id_proyecto). Predeterminado a 'fecha'.
     responses:
       200:
         description: Últimas mediciones obtenidas con éxito.
@@ -1696,12 +1701,14 @@ def listar_ultimas_mediciones():
     limit = int(args.get('limite', 0))
     offset = int(args.get('offset', 0))
     formato = args.get('formato', 'json')
+    order_by = args.get('order_by', 'fecha')
+    order_by_db = "d." + order_by
 
     fecha_inicio = args.get('fecha_inicio')
     fecha_fin = args.get('fecha_fin')
 
     args_dict = request.args.to_dict()
-    not_primary_keys = ['tabla', 'limite', 'offset', 'formato', 'fecha_inicio', 'fecha_fin']
+    not_primary_keys = ['tabla', 'limite', 'offset', 'formato', 'fecha_inicio', 'fecha_fin', 'order_by']
 
     # Filtrar los argumentos relevantes
     filtered_args = {key: value.split(',') for key, value in args_dict.items() if key not in not_primary_keys}
@@ -1711,11 +1718,11 @@ def listar_ultimas_mediciones():
 
     # Rango de fechas
     if fecha_inicio:
-        where_clauses.append("(d.fecha >= %s)")
+        where_clauses.append(f"({order_by_db} >= %s)")
         params.append(fecha_inicio)
     
     if fecha_fin:
-        where_clauses.append("(d.fecha <= %s)")
+        where_clauses.append(f"({order_by_db} <= %s)")
         params.append(fecha_fin)
 
     for key, values in filtered_args.items():
@@ -1735,9 +1742,11 @@ def listar_ultimas_mediciones():
 
         sql_query = f"""
             SELECT
+                d.id_dato,
                 d.fecha,
                 d.id_sesion,
                 d.valor,
+                d.fecha_insercion,
                 CONCAT(st.modelo, ' [', v.descripcion, ' (', v.unidad, ')]') AS unidad_medida,
                 s.descripcion AS sesion_descripcion,
                 s.fecha_inicio,
@@ -1760,9 +1769,29 @@ def listar_ultimas_mediciones():
             LEFT JOIN
                 sensores_dev.dispositivos AS disp ON sed.id_dispositivo = disp.id_dispositivo
             {where_clause}
-            ORDER BY d.fecha DESC
         """
 
+            # ORDER BY d.fecha DESC
+
+         # Validar y agregar ORDER BY de forma segura
+        valid_order_columns = {
+            'fecha': 'd.fecha',
+            'fecha_insercion': 'd.fecha_insercion',
+            'id_dato': 'd.id_dato',
+            'valor': 'd.valor',
+            'codigo_interno': 'disp.codigo_interno',
+            'id_sesion': 'd.id_sesion',
+            'id_proyecto': 'disp.id_proyecto'
+        }
+        
+        safe_order_column = valid_order_columns.get(order_by.lower(), 'd.fecha')
+        
+        # Manejar valores NULL/vacíos para que aparezcan al final en DESC
+        if order_by.lower() == 'fecha_insercion':
+            sql_query += f" ORDER BY {safe_order_column} IS NULL, {safe_order_column} DESC"
+        else:
+            sql_query += f" ORDER BY {safe_order_column} DESC"
+        
         cursor.execute(sql_query, params)
         filas = cursor.fetchall()
         if len(filas) == 0:
@@ -1783,10 +1812,10 @@ def listar_ultimas_mediciones():
         print("respuesta", respuesta)
         
         df = pd.DataFrame(respuesta)
-        df = df.fillna(value={"id_sesion": "Sin sesión", "sesion_descripcion": "", "fecha_inicio": "", "ubicacion": "", "dispositivo_descripcion":""})
+        df = df.fillna(value={"id_sesion": "Sin sesión", "sesion_descripcion": "", "fecha_inicio": "", "ubicacion": "", "dispositivo_descripcion":"", "fecha_insercion": ""})
 
         df_pivoted = df.pivot_table(
-            index=["fecha", "id_sesion", "sesion_descripcion", "fecha_inicio", "ubicacion", "id_proyecto", "codigo_interno", "dispositivo_descripcion"],
+            index=["fecha", "fecha_insercion", "id_sesion", "sesion_descripcion", "fecha_inicio", "ubicacion", "id_proyecto", "codigo_interno", "dispositivo_descripcion"],
             columns="unidad_medida",
             values="valor",
             aggfunc=list
