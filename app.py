@@ -1091,13 +1091,27 @@ def listar_datos_estructurados_v2():
     where_clauses = []
     params = []
 
-    # Rango de fechas
+    # Mapear order_by a columnas válidas para filtros de fecha
+    valid_order_columns_filter = {
+        'fecha': 'd.fecha',
+        'fecha_insercion': 'd.fecha_insercion',
+        'id_dato': 'd.fecha',  # Para id_dato usar fecha por defecto
+        'valor': 'd.fecha',    # Para valor usar fecha por defecto
+        'codigo_interno': 'd.fecha',  # Para codigo_interno usar fecha por defecto
+        'id_sesion': 'd.fecha',       # Para id_sesion usar fecha por defecto
+        'id_proyecto': 'd.fecha'      # Para id_proyecto usar fecha por defecto
+    }
+    
+    # Obtener la columna de fecha para filtros según order_by
+    fecha_column = valid_order_columns_filter.get(order_by.lower(), 'd.fecha')
+    
+    # Rango de fechas dinámico según order_by
     if fecha_inicio:
-        where_clauses.append("(d.fecha >= %s)")
+        where_clauses.append(f"({fecha_column} >= %s)")
         params.append(fecha_inicio)
     
     if fecha_fin:
-        where_clauses.append("(d.fecha <= %s)")
+        where_clauses.append(f"({fecha_column} <= %s)")
         params.append(fecha_fin)
 
     for key, values in filtered_args.items():
@@ -1217,8 +1231,6 @@ def listar_datos_estructurados_v2():
             elif isinstance(value, (datetime, date)):
               datos_dict[key] = value.isoformat()
           respuesta.append(datos_dict)
-
-
 
         # Crear el DataFrame
         df = pd.DataFrame(respuesta)
@@ -1624,13 +1636,13 @@ def listar_ultimas_mediciones():
         type: string
         format: date
         required: false
-        description: Fecha de inicio para filtrar los datos en formato "YYYY-MM-DD".
+        description: Fecha de inicio para filtrar los datos en formato "YYYY-MM-DD". Se filtra por el campo especificado en order_by (fecha o fecha_insercion).
       - name: fecha_fin
         in: query
         type: string
         format: date
         required: false
-        description: Fecha de fin para filtrar los datos en formato "YYYY-MM-DD".
+        description: Fecha de fin para filtrar los datos en formato "YYYY-MM-DD". Se filtra por el campo especificado en order_by (fecha o fecha_insercion).
       - name: filtros
         in: query
         type: string
@@ -1640,7 +1652,7 @@ def listar_ultimas_mediciones():
         in: query
         type: string
         required: false
-        description: Campo por el cual ordenar los resultados (fecha, fecha_insercion, id_sesion, codigo_interno, id_proyecto). Predeterminado a 'fecha'.
+        description: Campo por el cual ordenar los resultados (fecha, fecha_insercion, id_sesion, codigo_interno, id_proyecto). Predeterminado a 'fecha'. También determina el campo usado para filtros fecha_inicio/fecha_fin.
     responses:
       200:
         description: Últimas mediciones obtenidas con éxito.
@@ -1702,7 +1714,6 @@ def listar_ultimas_mediciones():
     offset = int(args.get('offset', 0))
     formato = args.get('formato', 'json')
     order_by = args.get('order_by', 'fecha')
-    order_by_db = "d." + order_by
 
     fecha_inicio = args.get('fecha_inicio')
     fecha_fin = args.get('fecha_fin')
@@ -1713,16 +1724,30 @@ def listar_ultimas_mediciones():
     # Filtrar los argumentos relevantes
     filtered_args = {key: value.split(',') for key, value in args_dict.items() if key not in not_primary_keys}
 
+    # Mapear order_by a columnas válidas para filtros de fecha
+    valid_order_columns_filter = {
+        'fecha': 'd.fecha',
+        'fecha_insercion': 'd.fecha_insercion',
+        'id_dato': 'd.fecha',  # Para id_dato usar fecha por defecto
+        'valor': 'd.fecha',    # Para valor usar fecha por defecto
+        'codigo_interno': 'd.fecha',  # Para codigo_interno usar fecha por defecto
+        'id_sesion': 'd.fecha',       # Para id_sesion usar fecha por defecto
+        'id_proyecto': 'd.fecha'      # Para id_proyecto usar fecha por defecto
+    }
+    
+    # Obtener la columna de fecha para filtros según order_by
+    fecha_column = valid_order_columns_filter.get(order_by.lower(), 'd.fecha')
+
     where_clauses = []
     params = []
 
-    # Rango de fechas
+    # Rango de fechas dinámico según order_by
     if fecha_inicio:
-        where_clauses.append(f"({order_by_db} >= %s)")
+        where_clauses.append(f"({fecha_column} >= %s)")
         params.append(fecha_inicio)
     
     if fecha_fin:
-        where_clauses.append(f"({order_by_db} <= %s)")
+        where_clauses.append(f"({fecha_column} <= %s)")
         params.append(fecha_fin)
 
     for key, values in filtered_args.items():
