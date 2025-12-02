@@ -1246,16 +1246,27 @@ def listar_datos_estructurados_v2():
             aggfunc=list
         ).reset_index()
 
-        # Crear una columna vectorizada con los id_dato concatenados por fecha
+        # Crear una columna vectorizada con los id_dato concatenados por la columna de ordenamiento
+        # Mapear order_by a columnas disponibles en el DataFrame
+        valid_groupby_columns = {
+            'fecha': 'fecha',
+            'fecha_insercion': 'fecha_insercion', 
+            'id_sesion': 'id_sesion',
+            'codigo_interno': 'codigo_interno',
+            'id_proyecto': 'id_proyecto'
+        }
+        
+        groupby_column = valid_groupby_columns.get(order_by.lower(), 'fecha')
+        
         id_concat = (
-            df.groupby("fecha")["id_dato"]
+            df.groupby(groupby_column)["id_dato"]
               .apply(lambda s: ', '.join(map(str, s)))
               .reset_index()
               .rename(columns={"id_dato": "id_dato_concatenado"})
         )
 
         # Unir la columna al DataFrame pivotado
-        df_pivoted = df_pivoted.merge(id_concat, on="fecha", how="left")
+        df_pivoted = df_pivoted.merge(id_concat, on=groupby_column, how="left")
 
         # Convertir las listas a cadenas separadas por comas
         df_pivoted = df_pivoted.map(lambda x: ', '.join(map(str, x)) if isinstance(x, list) else str(x) if x is not None else "")
