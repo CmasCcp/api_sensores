@@ -15,14 +15,15 @@ def listar_proyectos():
       - Archivos
     responses:
       200:
-        description: Lista de proyectos disponibles
-        examples:
-          application/json: {
-            "proyectos": ["proyecto_1", "proyecto_2", "proyecto_3"]
-          }
+      description: Lista de proyectos disponibles
+      examples:
+        application/json: {
+        "proyectos": ["proyecto_1", "proyecto_2", "proyecto_3"]
+        }
     """
-    directorio_proyectos = "C:/Users/Alienware/Desktop/Proyectos software/bajar_cargar_csv/datos"
-    
+    # Usar la variable de entorno CSVS_FOLDER si está definida; si no, usar la ruta por defecto
+    directorio_proyectos = os.environ.get('CSVS_FOLDER')
+   
     try:
         # Listar solo directorios (proyectos)
         proyectos = [d for d in os.listdir(directorio_proyectos) 
@@ -64,8 +65,9 @@ def listar_archivos_csv():
           }
     """
     from flask import request
+    directorio_proyectos = os.environ.get('CSVS_FOLDER')
     
-    directorio_proyectos = "C:/Users/Alienware/Desktop/Proyectos software/bajar_cargar_csv/datos"
+    # directorio_proyectos = "C:/Users/Alienware/Desktop/Proyectos software/bajar_cargar_csv/datos"
     proyecto_especifico = request.args.get('proyecto')
     
     try:
@@ -152,7 +154,9 @@ def listar_archivos_proyecto(proyecto):
             ]
           }
     """
-    directorio_proyectos = "C:/Users/Alienware/Desktop/Proyectos software/bajar_cargar_csv/datos"
+    directorio_proyectos = os.environ.get('CSVS_FOLDER')
+
+    # directorio_proyectos = "C:/Users/Alienware/Desktop/Proyectos software/bajar_cargar_csv/datos"
     ruta_proyecto = os.path.join(directorio_proyectos, proyecto)
     
     try:
@@ -233,8 +237,9 @@ def descargar_archivo(proyecto, filename):
     from flask import send_file, abort
     from werkzeug.utils import secure_filename
     import mimetypes
+    directorio_proyectos = os.environ.get('CSVS_FOLDER')
     
-    directorio_proyectos = "C:/Users/Alienware/Desktop/Proyectos software/bajar_cargar_csv/datos"
+    # directorio_proyectos = "C:/Users/Alienware/Desktop/Proyectos software/bajar_cargar_csv/datos"
     
     try:
         # Validar nombre de archivo por seguridad
