@@ -16,6 +16,25 @@
     "applyToAllDevices": true,
     "targetDevices": [],
     "active": true,
-    "ultima_validacion": "2025-10-16T15:30:27.935102"
+    "ultima_validacion": "2025-12-22T14:53:50.219018"
+  },
+  {
+    "id": "alert_1766425940986",
+    "projectId": 13,
+    "projectLabel": "13. Línea Base Pública - Agua",
+    "ruleType": "parametros",
+    "validationId": "stuck_value",
+    "parameter": "ENV-20-EC-K1.0 [Electroconductividad ambiental (uS/cm)]",
+    "config": {
+      "ventana_muestras": 23,
+      "max_unicos": 1
+    },
+    "email": [
+      "dkressing@udd.cl"
+    ],
+    "applyToAllDevices": true,
+    "targetDevices": [],
+    "active": true,
+    "ultima_validacion": "2025-12-22T14:53:59.678708"
   }
 ]
