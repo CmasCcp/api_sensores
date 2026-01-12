@@ -56,7 +56,7 @@ app.config['SWAGGER'] = {
             'description': 'Servidor local de desarrollo'
         },
         {
-            'url': 'https://api.example.com',
+            'url': 'https://api-sensores.cmasccp.cl',
             'description': 'Servidor de producción'
         }
     ],
@@ -69,7 +69,7 @@ app.config['SWAGGER'] = {
 }
 
 CORS(app,
-     resources={r"/*": {"origins": ["https://sensores.cmasccp.cl", "http://localhost:5173"]}},
+     resources={r"/*": {"origins": ["https://sensores.cmasccp.cl", "https://api-sensores.cmasccp.cl", "http://localhost:5173"]}},
      supports_credentials=True,
      allow_headers=["Content-Type", "Authorization"],
      expose_headers=["Content-Type"],
@@ -80,7 +80,7 @@ swagger = Swagger(app)
 def add_cors_headers(response):
     """Asegura cabeceras CORS para orígenes permitidos."""
     origin = request.headers.get('Origin')
-    allowed = ["https://sensores.cmasccp.cl", "http://localhost:5173"]
+    allowed = ["https://sensores.cmasccp.cl", "https://api-sensores.cmasccp.cl", "http://localhost:5173"]
     if origin in allowed:
         response.headers['Access-Control-Allow-Origin'] = origin
         response.headers['Access-Control-Allow-Credentials'] = 'true'
