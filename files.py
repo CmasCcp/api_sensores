@@ -72,30 +72,59 @@ def listar_archivos_csv():
     
     try:
         if proyecto_especifico:
-            # Listar archivos de un proyecto específico
-            ruta_proyecto = os.path.join(directorio_proyectos, proyecto_especifico)
-            
-            if not os.path.exists(ruta_proyecto) or not os.path.isdir(ruta_proyecto):
-                return jsonify({"error": f"Proyecto '{proyecto_especifico}' no encontrado"}), 404
-            
+          # Listar archivos de un proyecto específico agrupados por dispositivo
+          ruta_proyecto = os.path.join(directorio_proyectos, proyecto_especifico)
+
+          if not os.path.exists(ruta_proyecto) or not os.path.isdir(ruta_proyecto):
+            return jsonify({"error": f"Proyecto '{proyecto_especifico}' no encontrado"}), 404
+
+          dispositivos = [d for d in os.listdir(ruta_proyecto)
+                  if os.path.isdir(os.path.join(ruta_proyecto, d))]
+
+          resultado = {}
+
+          # Para cada dispositivo (carpeta), buscar recursivamente archivos CSV en sus carpetas de fechas
+          for dispositivo in dispositivos:
+            ruta_dispositivo = os.path.join(ruta_proyecto, dispositivo)
             archivos_csv = []
-            for archivo in os.listdir(ruta_proyecto):
-                if archivo.endswith(".csv"):
-                    ruta_archivo = os.path.join(ruta_proyecto, archivo)
-                    tamaño = os.path.getsize(ruta_archivo)
-                    archivos_csv.append({
-                        "nombre": archivo,
-                        "tamaño_bytes": tamaño,
-                        "tamaño_legible": format_file_size(tamaño)
-                    })
-            
-            print(f"Archivos CSV en {proyecto_especifico}: {len(archivos_csv)} archivos")
-            
-            return jsonify({
-                "proyecto": proyecto_especifico,
-                "total_archivos": len(archivos_csv),
-                "archivos": archivos_csv
-            })
+            for root, dirs, files in os.walk(ruta_dispositivo):
+              for archivo in files:
+                if archivo.lower().endswith('.csv'):
+                  ruta_archivo = os.path.join(root, archivo)
+                  tamaño = os.path.getsize(ruta_archivo)
+                  # ruta relativa respecto a la carpeta del dispositivo (incluye la carpeta de fecha)
+                  ruta_relativa = os.path.relpath(ruta_archivo, ruta_dispositivo)
+                  archivos_csv.append({
+                    "nombre": archivo,
+                    "ruta_relativa": ruta_relativa,
+                    "tamaño_bytes": tamaño,
+                    "tamaño_legible": format_file_size(tamaño)
+                  })
+            resultado[dispositivo] = archivos_csv
+
+          # También comprobar si hay CSV directamente en la raíz del proyecto
+          archivos_en_raiz = []
+          for f in os.listdir(ruta_proyecto):
+            ruta_f = os.path.join(ruta_proyecto, f)
+            if os.path.isfile(ruta_f) and f.lower().endswith('.csv'):
+              tamaño = os.path.getsize(ruta_f)
+              archivos_en_raiz.append({
+                "nombre": f,
+                "ruta_relativa": f,
+                "tamaño_bytes": tamaño,
+                "tamaño_legible": format_file_size(tamaño)
+              })
+          if archivos_en_raiz:
+            resultado["_raiz_proyecto"] = archivos_en_raiz
+
+          total = sum(len(v) for v in resultado.values())
+          print(f"Archivos CSV en {proyecto_especifico}: {total} archivos (agrupados por dispositivo)")
+
+          return jsonify({
+            "proyecto": proyecto_especifico,
+            "total_archivos": total,
+            "dispositivos": resultado
+          })
         else:
             # Listar estructura completa de todos los proyectos
             estructura = {}
@@ -104,20 +133,46 @@ def listar_archivos_csv():
             proyectos = [d for d in os.listdir(directorio_proyectos) 
                         if os.path.isdir(os.path.join(directorio_proyectos, d))]
             
-            # Para cada proyecto, obtener sus archivos CSV con información
+            # Para cada proyecto, agrupar CSVs por dispositivo (cada proyecto tiene carpetas de dispositivos)
             for proyecto in proyectos:
-                ruta_proyecto = os.path.join(directorio_proyectos, proyecto)
+              ruta_proyecto = os.path.join(directorio_proyectos, proyecto)
+              dispositivos = [d for d in os.listdir(ruta_proyecto)
+                      if os.path.isdir(os.path.join(ruta_proyecto, d))]
+
+              resultado = {}
+              for dispositivo in dispositivos:
+                ruta_dispositivo = os.path.join(ruta_proyecto, dispositivo)
                 archivos_csv = []
-                for archivo in os.listdir(ruta_proyecto):
-                    if archivo.endswith(".csv"):
-                        ruta_archivo = os.path.join(ruta_proyecto, archivo)
-                        tamaño = os.path.getsize(ruta_archivo)
-                        archivos_csv.append({
-                            "nombre": archivo,
-                            "tamaño_bytes": tamaño,
-                            "tamaño_legible": format_file_size(tamaño)
-                        })
-                estructura[proyecto] = archivos_csv
+                for root, dirs, files in os.walk(ruta_dispositivo):
+                  for archivo in files:
+                    if archivo.lower().endswith('.csv'):
+                      ruta_archivo = os.path.join(root, archivo)
+                      tamaño = os.path.getsize(ruta_archivo)
+                      ruta_relativa = os.path.relpath(ruta_archivo, ruta_dispositivo)
+                      archivos_csv.append({
+                        "nombre": archivo,
+                        "ruta_relativa": ruta_relativa,
+                        "tamaño_bytes": tamaño,
+                        "tamaño_legible": format_file_size(tamaño)
+                      })
+                resultado[dispositivo] = archivos_csv
+
+              # CSVs en la raíz del proyecto (si los hay)
+              archivos_en_raiz = []
+              for f in os.listdir(ruta_proyecto):
+                ruta_f = os.path.join(ruta_proyecto, f)
+                if os.path.isfile(ruta_f) and f.lower().endswith('.csv'):
+                  tamaño = os.path.getsize(ruta_f)
+                  archivos_en_raiz.append({
+                    "nombre": f,
+                    "ruta_relativa": f,
+                    "tamaño_bytes": tamaño,
+                    "tamaño_legible": format_file_size(tamaño)
+                  })
+              if archivos_en_raiz:
+                resultado["_raiz_proyecto"] = archivos_en_raiz
+
+              estructura[proyecto] = resultado
             
             print(f"Estructura completa: {estructura}")
             return jsonify({"estructura": estructura})
@@ -191,137 +246,6 @@ def listar_archivos_proyecto(proyecto):
         return jsonify({"error": f"Error al listar archivos del proyecto: {str(e)}"}), 500
 
 
-@files_bp.route('/descargarArchivo/<proyecto>/<filename>', methods=['GET'])
-def descargar_archivo(proyecto, filename):
-    """
-    Descarga un archivo específico de un proyecto.
-    ---
-    tags:
-      - Archivos
-    parameters:
-      - name: proyecto
-        in: path
-        type: string
-        required: true
-        description: Nombre del proyecto
-      - name: filename
-        in: path
-        type: string
-        required: true
-        description: Nombre del archivo a descargar
-    responses:
-      200:
-        description: Archivo descargado exitosamente
-        content:
-          application/octet-stream:
-            schema:
-              type: string
-              format: binary
-      404:
-        description: Proyecto o archivo no encontrado
-        schema:
-          type: object
-          properties:
-            error:
-              type: string
-              example: "Archivo 'nombre.csv' no encontrado en proyecto 'proyecto_1'"
-      400:
-        description: Nombre de archivo inválido por seguridad
-        schema:
-          type: object
-          properties:
-            error:
-              type: string
-              example: "Nombre de archivo inválido"
-    """
-    from flask import send_file, abort
-    from werkzeug.utils import secure_filename
-    import mimetypes
-    directorio_proyectos = os.environ.get('CSVS_FOLDER')
-    
-    # directorio_proyectos = "C:/Users/Alienware/Desktop/Proyectos software/bajar_cargar_csv/datos"
-    
-    try:
-        # Validar nombre de archivo por seguridad
-        filename_seguro = secure_filename(filename)
-        if not filename_seguro or filename_seguro != filename:
-            return jsonify({"error": "Nombre de archivo inválido"}), 400
-        
-        # Construir ruta completa
-        ruta_proyecto = os.path.join(directorio_proyectos, proyecto)
-        ruta_archivo = os.path.join(ruta_proyecto, filename_seguro)
-        
-        # Validar que el proyecto existe
-        if not os.path.exists(ruta_proyecto) or not os.path.isdir(ruta_proyecto):
-            return jsonify({"error": f"Proyecto '{proyecto}' no encontrado"}), 404
-        
-        # Validar que el archivo existe
-        if not os.path.exists(ruta_archivo) or not os.path.isfile(ruta_archivo):
-            return jsonify({"error": f"Archivo '{filename}' no encontrado en proyecto '{proyecto}'"}), 404
-        
-        # Validar que el archivo está dentro del directorio del proyecto (seguridad)
-        ruta_real = os.path.realpath(ruta_archivo)
-        directorio_real = os.path.realpath(ruta_proyecto)
-        if not ruta_real.startswith(directorio_real):
-            return jsonify({"error": "Acceso denegado"}), 403
-        
-        # Determinar tipo MIME del archivo
-        tipo_mime, _ = mimetypes.guess_type(ruta_archivo)
-        if not tipo_mime:
-            tipo_mime = 'application/octet-stream'
-        
-        print(f"Descargando archivo: {ruta_archivo} (tipo: {tipo_mime})")
-        
-        # Enviar el archivo
-        return send_file(
-            ruta_archivo,
-            mimetype=tipo_mime,
-            as_attachment=True,
-            download_name=filename_seguro
-        )
-        
-    except Exception as e:
-        print(f"Error al descargar archivo: {str(e)}")
-        return jsonify({"error": f"Error interno al descargar archivo: {str(e)}"}), 500
-
-
-@files_bp.route('/descargarArchivo', methods=['GET'])
-def descargar_archivo_query():
-    """
-    Descarga un archivo usando parámetros de query (alternativa).
-    ---
-    tags:
-      - Archivos
-    parameters:
-      - name: proyecto
-        in: query
-        type: string
-        required: true
-        description: Nombre del proyecto
-      - name: archivo
-        in: query
-        type: string
-        required: true
-        description: Nombre del archivo a descargar
-    responses:
-      200:
-        description: Archivo descargado exitosamente
-      400:
-        description: Faltan parámetros requeridos
-      404:
-        description: Proyecto o archivo no encontrado
-    """
-    from flask import request
-    
-    proyecto = request.args.get('proyecto')
-    archivo = request.args.get('archivo')
-    
-    if not proyecto or not archivo:
-        return jsonify({"error": "Los parámetros 'proyecto' y 'archivo' son requeridos"}), 400
-    
-    # Redirigir a la función principal
-    return descargar_archivo(proyecto, archivo)
-
 
 def format_file_size(size_bytes):
     """Convierte bytes a formato legible (KB, MB, GB)"""
@@ -334,4 +258,54 @@ def format_file_size(size_bytes):
     p = math.pow(1024, i)
     s = round(size_bytes / p, 2)
     return f"{s} {size_names[i]}"
+
+
+@files_bp.route('/descargarArchivoCSV', methods=['GET'])
+def descargar_por_nombre():
+  """
+  Descarga un archivo buscando por su nombre en todo el directorio de proyectos.
+  Parámetros de query:
+    - archivo: nombre del archivo (requerido)
+  Busca de forma recursiva dentro de `CSVS_FOLDER` y devuelve el primer match.
+  """
+  from flask import request, send_file
+  import mimetypes
+
+  directorio_proyectos = os.environ.get('CSVS_FOLDER')
+  archivo = request.args.get('archivo')
+
+  if not archivo:
+    return jsonify({"error": "El parámetro 'archivo' es requerido"}), 400
+
+  # Asegurar que solo recibimos un nombre de archivo (evitar paths)
+  nombre_buscar = os.path.basename(archivo)
+
+  try:
+    for root, dirs, files in os.walk(directorio_proyectos):
+      for f in files:
+        # comparación case-insensitive para mayor flexibilidad
+        if f == nombre_buscar or f.lower() == nombre_buscar.lower():
+          ruta_archivo = os.path.join(root, f)
+
+          # seguridad: comprobar que está dentro del dir base
+          ruta_real = os.path.realpath(ruta_archivo)
+          directorio_real = os.path.realpath(directorio_proyectos)
+          if not ruta_real.startswith(directorio_real):
+            continue
+
+          tipo_mime, _ = mimetypes.guess_type(ruta_archivo)
+          if not tipo_mime:
+            tipo_mime = 'application/octet-stream'
+
+          return send_file(
+            ruta_archivo,
+            mimetype=tipo_mime,
+            as_attachment=True,
+            download_name=f
+          )
+
+    return jsonify({"error": f"Archivo '{archivo}' no encontrado"}), 404
+
+  except Exception as e:
+    return jsonify({"error": f"Error al buscar/descargar archivo: {str(e)}"}), 500
 
