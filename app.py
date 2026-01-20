@@ -138,49 +138,6 @@ config = {
 }
 print(config)
 
-# socketio = SocketIO(app, cors_allowed_origins="*", logger=True, engineio_logger=True)
-
-# @socketio.on('connect')
-# def handle_connect():
-#     print('Cliente conectado')
-#     emit('message', {'data': 'Conexión exitosa'})
-
-# @socketio.on('disconnect')
-# def handle_disconnect():
-#     print('Cliente desconectado')
-
-# @socketio.on_error_default
-# def default_error_handler(e):
-#     print(f'SocketIO Error: {e}')
-
-# @app.route('/test-websocket', methods=['GET'])
-# def test_websocket():
-#     """
-#     Endpoint de prueba para verificar que WebSocket funciona correctamente.
-#     ---
-#     tags:
-#       - Testing
-#     responses:
-#       200:
-#         description: Mensaje de prueba enviado por WebSocket
-#     """
-#     try:
-#         test_data = {
-#             'message': 'Test message from server',
-#             'timestamp': datetime.now().isoformat()
-#         }
-#         socketio.emit('test_message', test_data)
-#         return jsonify({
-#             'status': 'success', 
-#             'message': 'Test WebSocket message sent',
-#             'data': test_data
-#         }), 200
-#     except Exception as e:
-#         return jsonify({
-#             'status': 'error',
-#             'message': f'WebSocket test failed: {str(e)}'
-#         }), 500
-
 
 app.register_blueprint(insertar_medicion_v2_bp)
 app.register_blueprint(alertas_bp)

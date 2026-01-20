@@ -9,17 +9,17 @@ files_bp = Blueprint("files", __name__)
 @files_bp.route('/listarProyectos', methods=['GET'])
 def listar_proyectos():
     """
-    Lista los proyectos disponibles (carpetas en el directorio de proyectos).
+    Lista los proyectos disponibles (carpetas en el directorio de proyectos con datos en frío).
     ---
     tags:
       - Archivos
     responses:
       200:
-      description: Lista de proyectos disponibles
-      examples:
-        application/json: {
-        "proyectos": ["proyecto_1", "proyecto_2", "proyecto_3"]
-        }
+        description: Lista de proyectos disponibles
+        examples:
+          application/json: {
+            "proyectos": ["proyecto_1", "proyecto_2", "proyecto_3"]
+          }
     """
     # Usar la variable de entorno CSVS_FOLDER si está definida; si no, usar la ruta por defecto
     directorio_proyectos = os.environ.get('CSVS_FOLDER')
@@ -179,72 +179,6 @@ def listar_archivos_csv():
             
     except Exception as e:
         return jsonify({"error": f"Error al listar archivos: {str(e)}"}), 500
-
-
-@files_bp.route('/listarArchivosProyecto/<proyecto>', methods=['GET'])
-def listar_archivos_proyecto(proyecto):
-    """
-    Lista todos los archivos (no solo CSV) de un proyecto específico.
-    ---
-    tags:
-      - Archivos
-    parameters:
-      - name: proyecto
-        in: path
-        type: string
-        required: true
-        description: Nombre del proyecto
-    responses:
-      200:
-        description: Lista de archivos del proyecto
-        examples:
-          application/json: {
-            "proyecto": "proyecto_1",
-            "archivos": [
-              {
-                "nombre": "archivo1.csv",
-                "tipo": "csv",
-                "tamaño": 1024
-              }
-            ]
-          }
-    """
-    directorio_proyectos = os.environ.get('CSVS_FOLDER')
-
-    # directorio_proyectos = "C:/Users/Alienware/Desktop/Proyectos software/bajar_cargar_csv/datos"
-    ruta_proyecto = os.path.join(directorio_proyectos, proyecto)
-    
-    try:
-        if not os.path.exists(ruta_proyecto) or not os.path.isdir(ruta_proyecto):
-            return jsonify({"error": f"Proyecto '{proyecto}' no encontrado"}), 404
-        
-        archivos_info = []
-        
-        for archivo in os.listdir(ruta_proyecto):
-            ruta_archivo = os.path.join(ruta_proyecto, archivo)
-            
-            if os.path.isfile(ruta_archivo):
-                extension = os.path.splitext(archivo)[1].lower().lstrip('.')
-                tamaño = os.path.getsize(ruta_archivo)
-                
-                archivos_info.append({
-                    "nombre": archivo,
-                    "tipo": extension if extension else "sin_extension",
-                    "tamaño_bytes": tamaño,
-                    "tamaño_legible": format_file_size(tamaño)
-                })
-        
-        print(f"Archivos en proyecto {proyecto}: {len(archivos_info)} archivos")
-        
-        return jsonify({
-            "proyecto": proyecto,
-            "total_archivos": len(archivos_info),
-            "archivos": archivos_info
-        })
-        
-    except Exception as e:
-        return jsonify({"error": f"Error al listar archivos del proyecto: {str(e)}"}), 500
-
 
 
 def format_file_size(size_bytes):
